@@ -681,7 +681,7 @@ export default function TeacherDashboard() {
             <button onClick={() => { setActiveTab('students'); setSelectedStudent(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'students' ? t.navActive : t.navInactive}`}>👩‍🎓 My Students</button>
             <button onClick={() => { setActiveTab('books'); setSelectedStudent(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'books' ? t.navActive : t.navInactive}`}>📚 Books</button>
             <button onClick={() => { setActiveTab('payments'); setSelectedStudent(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'payments' ? t.navActive : t.navInactive}`}>💳 Payments</button>
-            <button onClick={() => { setActiveTab('reports'); setSelectedStudent(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'reports' ? t.navActive : t.navInactive}`}>📈 Reports & BIR</button>
+            <button onClick={() => { setActiveTab('reports'); setSelectedStudent(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'reports' ? t.navActive : t.navInactive}`}>📈 Reports</button>
             <button onClick={() => { setActiveTab('settings'); setSelectedStudent(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'settings' ? t.navActive : t.navInactive}`}>⚙️ Account Settings</button>
           </nav>
         </div>
@@ -1149,10 +1149,10 @@ export default function TeacherDashboard() {
           </div>
         )}
 
-        {/* REPORTS & BIR TAB */}
+        {/* REPORTS TAB */}
         {activeTab === 'reports' && !selectedStudent && (
           <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
-            <h1 className="text-2xl font-black text-neutral-900 mb-1">📈 Performance Reports & BIR</h1>
+            <h1 className="text-2xl font-black text-neutral-900 mb-1">📈 Performance Reports</h1>
             <p className="text-sm text-neutral-500 mb-6">Monthly analytics on teaching hours, income tax tracking, and financial statements</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="p-6 bg-neutral-50/50 rounded-2xl border border-neutral-200"><h3 className="font-bold text-neutral-800 mb-2">Total Monthly Hours</h3><p className={`text-3xl font-black ${t.currencyColor}`}>0.0 hrs</p></div>
