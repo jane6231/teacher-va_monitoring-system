@@ -683,6 +683,12 @@ export default function TeacherDashboard() {
             <button onClick={() => { setActiveTab('payments'); setSelectedStudent(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'payments' ? t.navActive : t.navInactive}`}>💳 Payments</button>
             <button onClick={() => { setActiveTab('reports'); setSelectedStudent(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'reports' ? t.navActive : t.navInactive}`}>📈 Reports</button>
             <button onClick={() => { setActiveTab('settings'); setSelectedStudent(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'settings' ? t.navActive : t.navInactive}`}>⚙️ Account Settings</button>
+            <button
+  onClick={() => router.push('/va/dashboard')}
+  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm text-purple-200 hover:bg-purple-900 transition"
+>
+  💼 Switch to VA Dashboard
+</button>
           </nav>
         </div>
 
