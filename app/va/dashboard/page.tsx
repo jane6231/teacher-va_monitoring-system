@@ -1,16 +1,196 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
+
+type VATask = {
+  id: string;
+  title: string;
+  description: string | null;
+  client_name: string | null;
+  due_date: string | null;
+  priority: 'low' | 'medium' | 'high';
+  status: 'pending' | 'in_progress' | 'completed';
+};
+
+
+type VAProject = {
+  id: string;
+  user_id: string;
+  project_name: string;
+  client_name: string | null;
+  description: string | null;
+  status: 'active' | 'completed' | 'on_hold';
+  start_date: string | null;
+  due_date: string | null;
+  retainer_amount: number;
+  billing_cycle: string;
+  created_at: string;
+  updated_at: string;
+};
+
+
+type VATimeEntry = {
+  id: string;
+  user_id: string;
+  task_id: string | null;
+  client_name: string | null;
+  description: string | null;
+  started_at: string;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  hourly_rate: number;
+  is_billable: boolean;
+  created_at: string;
+};
+
+type VAInvoice = {
+  id: string;
+  user_id: string;
+  invoice_number: string;
+  client_name: string;
+  description: string | null;
+  amount: number;
+  issue_date: string;
+  due_date: string | null;
+  status: 'pending' | 'paid' | 'overdue';
+  created_at: string;
+  updated_at: string;
+};
+
+const formatPeso = (value: number | string | null | undefined) => {
+  const amount = Number(value ?? 0);
+
+  return `₱${(Number.isFinite(amount) ? amount : 0).toLocaleString('en-PH', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+};
 
 export default function VADashboard() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [theme, setTheme] = useState('charcoal');
+  const [tasks, setTasks] = useState<VATask[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [taskError, setTaskError] = useState('');
+  const [showTaskForm, setShowTaskForm] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskDescription, setTaskDescription] = useState('');
+  const [clientName, setClientName] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
+  const [taskStatus, setTaskStatus] = useState<'pending' | 'in_progress' | 'completed'>('pending');
+
+const [projects, setProjects] = useState<VAProject[]>([]);
+const [projectsLoading, setProjectsLoading] = useState(false);
+const [projectError, setProjectError] = useState('');
+const [showProjectForm, setShowProjectForm] = useState(false);
+const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+
+const [projectName, setProjectName] = useState('');
+const [projectClient, setProjectClient] = useState('');
+const [projectDescription, setProjectDescription] = useState('');
+const [projectStatus, setProjectStatus] = useState<VAProject['status']>('active');
+const [projectStartDate, setProjectStartDate] = useState('');
+const [projectDueDate, setProjectDueDate] = useState('');
+const [retainerAmount, setRetainerAmount] = useState('0');
+const [billingCycle, setBillingCycle] = useState('monthly');
+
+
+const [timeEntries, setTimeEntries] = useState<VATimeEntry[]>([]);
+const [timeLoading, setTimeLoading] = useState(false);
+const [activeTimer, setActiveTimer] = useState<VATimeEntry | null>(null);
+const [elapsedSeconds, setElapsedSeconds] = useState(0);
+const [timerDescription, setTimerDescription] = useState('');
+const [timerClientName, setTimerClientName] = useState('');
+const [hourlyRate, setHourlyRate] = useState('600');
+const [showTimerForm, setShowTimerForm] = useState(false);
+const [timeError, setTimeError] = useState('');
+const [invoices, setInvoices] = useState<VAInvoice[]>([]);
+const [invoicesLoading, setInvoicesLoading] = useState(false);
+const [invoiceError, setInvoiceError] = useState('');
+const [showInvoiceForm, setShowInvoiceForm] = useState(false);
+const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
+const [viewingInvoice, setViewingInvoice] = useState<VAInvoice | null>(null);
+
+const [invoiceClient, setInvoiceClient] = useState('');
+const [invoiceDescription, setInvoiceDescription] = useState('');
+const [invoiceAmount, setInvoiceAmount] = useState('');
+const [invoiceIssueDate, setInvoiceIssueDate] = useState('');
+const [invoiceDueDate, setInvoiceDueDate] = useState('');
+const [invoiceStatus, setInvoiceStatus] = useState<VAInvoice['status']>('pending');
+useEffect(() => {
+  setInvoiceIssueDate(new Date().toISOString().split('T')[0]);
+}, []);
+
   const router = useRouter();
   const supabase = createClient();
+
+  async function loadTasks(userId: string) {
+    setTasksLoading(true);
+    setTaskError('');
+
+    const { data, error } = await supabase
+      .from('va_tasks')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      setTaskError(error.message);
+      setTasks([]);
+    } else {
+      setTasks((data || []) as VATask[]);
+    }
+
+    setTasksLoading(false);
+  }
+
+async function loadProjects(userId: string) {
+  setProjectsLoading(true);
+  setProjectError('');
+
+  const { data, error } = await supabase
+    .from('va_projects')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    setProjectError(error.message);
+    setProjects([]);
+  } else {
+    setProjects((data || []) as VAProject[]);
+  }
+
+  setProjectsLoading(false);
+}
+
+async function loadTimeEntries(userId: string) {
+  setTimeLoading(true);
+  setTimeError('');
+
+  const { data, error } = await supabase
+    .from('va_time_entries')
+    .select('*')
+    .eq('user_id', userId)
+    .order('started_at', { ascending: false });
+
+  if (error) {
+    setTimeError(error.message);
+    setTimeEntries([]);
+  } else {
+    const entries = (data || []) as VATimeEntry[];
+    setTimeEntries(entries);
+    setActiveTimer(entries.find(entry => !entry.ended_at) || null);
+  }
+
+  setTimeLoading(false);
+}
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('va_dashboard_theme');
@@ -18,6 +198,25 @@ export default function VADashboard() {
       setTheme(savedTheme);
     }
 
+    async function loadInvoices(userId: string) {
+  setInvoicesLoading(true);
+  setInvoiceError('');
+
+  const { data, error } = await supabase
+    .from('va_invoices')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    setInvoiceError(error.message);
+    setInvoices([]);
+  } else {
+    setInvoices((data || []) as VAInvoice[]);
+  }
+
+  setInvoicesLoading(false);
+}
     async function getUser() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -25,15 +224,452 @@ export default function VADashboard() {
         return;
       }
       setUser(user);
+await loadTasks(user.id);
+await loadTimeEntries(user.id);
+await loadProjects(user.id);
+await loadInvoices(user.id);
       setLoading(false);
     }
     getUser();
   }, [router, supabase]);
 
+
+useEffect(() => {
+  if (!activeTimer) {
+    setElapsedSeconds(0);
+    return;
+  }
+
+  const updateElapsed = () => {
+    const seconds = Math.max(
+      0,
+      Math.floor(
+        (Date.now() -
+          new Date(activeTimer.started_at).getTime()) / 1000
+      )
+    );
+
+    setElapsedSeconds(seconds);
+  };
+
+  updateElapsed();
+
+  const interval = window.setInterval(updateElapsed, 1000);
+
+  return () => window.clearInterval(interval);
+}, [activeTimer]);
+
+
   const handleThemeChange = (newTheme: string) => {
     setTheme(newTheme);
     localStorage.setItem('va_dashboard_theme', newTheme);
   };
+
+  const resetTaskForm = () => {
+    setEditingTaskId(null);
+    setTaskTitle('');
+    setTaskDescription('');
+    setClientName('');
+    setDueDate('');
+    setPriority('medium');
+    setTaskStatus('pending');
+    setShowTaskForm(false);
+  };
+
+  const openNewTaskForm = () => {
+    resetTaskForm();
+    setShowTaskForm(true);
+  };
+
+  const openEditTaskForm = (task: VATask) => {
+    setEditingTaskId(task.id);
+    setTaskTitle(task.title);
+    setTaskDescription(task.description || '');
+    setClientName(task.client_name || '');
+    setDueDate(task.due_date || '');
+    setPriority(task.priority);
+    setTaskStatus(task.status);
+    setShowTaskForm(true);
+  };
+
+  const handleSaveTask = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!user) return;
+
+    setTaskError('');
+
+    const taskData = {
+      title: taskTitle.trim(),
+      description: taskDescription.trim() || null,
+      client_name: clientName.trim() || null,
+      due_date: dueDate || null,
+      priority,
+      status: taskStatus,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (!taskData.title) {
+      setTaskError('Please enter a task title.');
+      return;
+    }
+
+    const result = editingTaskId
+      ? await supabase
+          .from('va_tasks')
+          .update(taskData)
+          .eq('id', editingTaskId)
+          .eq('user_id', user.id)
+      : await supabase
+          .from('va_tasks')
+          .insert({ ...taskData, user_id: user.id });
+
+    if (result.error) {
+      setTaskError(result.error.message);
+      return;
+    }
+
+    await loadTasks(user.id);
+    resetTaskForm();
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    if (!user || !window.confirm('Delete this task? This cannot be undone.')) return;
+
+    const { error } = await supabase
+      .from('va_tasks')
+      .delete()
+      .eq('id', taskId)
+      .eq('user_id', user.id);
+
+    if (error) {
+      setTaskError(error.message);
+      return;
+    }
+
+    await loadTasks(user.id);
+  };
+
+  const handleTaskStatusChange = async (
+    taskId: string,
+    status: VATask['status']
+  ) => {
+    if (!user) return;
+
+    const { error } = await supabase
+      .from('va_tasks')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', taskId)
+      .eq('user_id', user.id);
+
+    if (error) {
+      setTaskError(error.message);
+      return;
+    }
+
+    await loadTasks(user.id);
+  };
+
+
+const handleStartTimer = async () => {
+  if (!user) return;
+
+  setTimeError('');
+
+  if (activeTimer) {
+    setTimeError('A timer is already running. Stop it before starting another.');
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('va_time_entries')
+    .insert({
+      user_id: user.id,
+      client_name: timerClientName.trim() || null,
+      description: timerDescription.trim() || null,
+      started_at: new Date().toISOString(),
+      hourly_rate: Number(hourlyRate) || 0,
+      is_billable: true,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    setTimeError(error.message);
+    return;
+  }
+
+  setActiveTimer(data as VATimeEntry);
+  setTimeEntries(prev => [data as VATimeEntry, ...prev]);
+  setShowTimerForm(false);
+  setTimerDescription('');
+  setTimerClientName('');
+};
+
+const handleStopTimer = async () => {
+  if (!user || !activeTimer) return;
+
+  setTimeError('');
+
+  const endedAt = new Date();
+  const duration = Math.max(
+    0,
+    Math.floor(
+      (endedAt.getTime() -
+        new Date(activeTimer.started_at).getTime()) / 1000
+    )
+  );
+
+  const { data, error } = await supabase
+    .from('va_time_entries')
+    .update({
+      ended_at: endedAt.toISOString(),
+      duration_seconds: duration,
+    })
+    .eq('id', activeTimer.id)
+    .eq('user_id', user.id)
+    .select()
+    .single();
+
+  if (error) {
+    setTimeError(error.message);
+    return;
+  }
+
+  setTimeEntries(prev =>
+    prev.map(entry => entry.id === activeTimer.id
+      ? data as VATimeEntry
+      : entry
+    )
+  );
+
+  setActiveTimer(null);
+  setElapsedSeconds(0);
+};
+
+
+const resetProjectForm = () => {
+  setEditingProjectId(null);
+  setProjectName('');
+  setProjectClient('');
+  setProjectDescription('');
+  setProjectStatus('active');
+  setProjectStartDate('');
+  setProjectDueDate('');
+  setRetainerAmount('0');
+  setBillingCycle('monthly');
+  setShowProjectForm(false);
+  setProjectError('');
+};
+
+const openNewProjectForm = () => {
+  resetProjectForm();
+  setShowProjectForm(true);
+};
+
+const openEditProjectForm = (project: VAProject) => {
+  setEditingProjectId(project.id);
+  setProjectName(project.project_name);
+  setProjectClient(project.client_name || '');
+  setProjectDescription(project.description || '');
+  setProjectStatus(project.status);
+  setProjectStartDate(project.start_date || '');
+  setProjectDueDate(project.due_date || '');
+  setRetainerAmount(String(project.retainer_amount ?? 0));
+  setBillingCycle(project.billing_cycle || 'monthly');
+  setProjectError('');
+  setShowProjectForm(true);
+};
+
+const handleSaveProject = async (
+  event: FormEvent<HTMLFormElement>
+) => {
+  event.preventDefault();
+
+  if (!user) return;
+
+  setProjectError('');
+
+  if (!projectName.trim()) {
+    setProjectError('Please enter a project name.');
+    return;
+  }
+
+  const amount = Number(retainerAmount);
+
+  if (!Number.isFinite(amount) || amount < 0) {
+    setProjectError('Please enter a valid project budget.');
+    return;
+  }
+
+  if (
+    projectStartDate &&
+    projectDueDate &&
+    projectDueDate < projectStartDate
+  ) {
+    setProjectError('Deadline cannot be earlier than the start date.');
+    return;
+  }
+
+  const projectData = {
+    project_name: projectName.trim(),
+    client_name: projectClient.trim() || null,
+    description: projectDescription.trim() || null,
+    status: projectStatus,
+    start_date: projectStartDate || null,
+    due_date: projectDueDate || null,
+    retainer_amount: amount,
+    billing_cycle: billingCycle,
+    updated_at: new Date().toISOString(),
+  };
+
+  const result = editingProjectId
+    ? await supabase
+        .from('va_projects')
+        .update(projectData)
+        .eq('id', editingProjectId)
+        .eq('user_id', user.id)
+    : await supabase
+        .from('va_projects')
+        .insert({
+          ...projectData,
+          user_id: user.id,
+        });
+
+  if (result.error) {
+    setProjectError(result.error.message);
+    return;
+  }
+
+  await loadProjects(user.id);
+  resetProjectForm();
+};
+
+const handleDeleteProject = async (projectId: string) => {
+  if (
+    !user ||
+    !window.confirm('Delete this project? This cannot be undone.')
+  ) return;
+
+  const { error } = await supabase
+    .from('va_projects')
+    .delete()
+    .eq('id', projectId)
+    .eq('user_id', user.id);
+
+  if (error) {
+    setProjectError(error.message);
+    return;
+  }
+
+  await loadProjects(user.id);
+};
+const resetInvoiceForm = () => {
+  setEditingInvoiceId(null);
+  setInvoiceClient('');
+  setInvoiceDescription('');
+  setInvoiceAmount('');
+  setInvoiceIssueDate(new Date().toISOString().split('T')[0]);
+  setInvoiceDueDate('');
+  setInvoiceStatus('pending');
+  setShowInvoiceForm(false);
+  setInvoiceError('');
+};
+
+
+const openEditInvoiceForm = (invoice: VAInvoice) => {
+  setEditingInvoiceId(invoice.id);
+
+  setInvoiceClient(invoice.client_name);
+  setInvoiceDescription(invoice.description || '');
+  setInvoiceAmount(String(invoice.amount));
+  setInvoiceIssueDate(invoice.issue_date);
+  setInvoiceDueDate(invoice.due_date || '');
+  setInvoiceStatus(invoice.status);
+
+  setInvoiceError('');
+  setShowInvoiceForm(true);
+};
+
+
+const handleSaveInvoice = async (
+  event: FormEvent<HTMLFormElement>
+) => {
+  event.preventDefault();
+
+  if (!user) return;
+
+  setInvoiceError('');
+
+  const amount = Number(invoiceAmount);
+
+  if (!invoiceClient.trim()) {
+    setInvoiceError('Please enter a client name.');
+    return;
+  }
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    setInvoiceError('Please enter a valid invoice amount.');
+    return;
+  }
+
+  if (!invoiceIssueDate) {
+    setInvoiceError('Please select an issue date.');
+    return;
+  }
+
+  const invoiceData = {
+    client_name: invoiceClient.trim(),
+    description: invoiceDescription.trim() || null,
+    amount,
+    issue_date: invoiceIssueDate,
+    due_date: invoiceDueDate || null,
+    status: invoiceStatus,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (editingInvoiceId) {
+    const { data, error } = await supabase
+      .from('va_invoices')
+      .update(invoiceData)
+      .eq('id', editingInvoiceId)
+      .eq('user_id', user.id)
+      .select()
+      .single();
+
+    if (error) {
+      setInvoiceError(error.message);
+      return;
+    }
+
+    setInvoices(prev =>
+      prev.map(invoice =>
+        invoice.id === editingInvoiceId
+          ? data as VAInvoice
+          : invoice
+      )
+    );
+  } else {
+    const { data, error } = await supabase
+      .from('va_invoices')
+      .insert({
+        ...invoiceData,
+        user_id: user.id,
+        invoice_number: `INV-${Date.now()}`,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      setInvoiceError(error.message);
+      return;
+    }
+
+    setInvoices(prev => [data as VAInvoice, ...prev]);
+  }
+
+  resetInvoiceForm();
+};
+
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -175,7 +811,17 @@ export default function VADashboard() {
               <div className={`${t.cardBg} p-5 rounded-2xl shadow-xs border ${t.cardBorder} relative`}><span className={`text-[10px] font-bold ${t.textMuted} tracking-wider`}>ACTIVE CLIENTS</span><p className="text-3xl font-black text-neutral-900 mt-3">0</p><p className="text-xs text-neutral-500 font-medium mt-1">Clients</p></div>
               <div className={`${t.cardBg} p-5 rounded-2xl shadow-xs border ${t.cardBorder}`}><span className={`text-[10px] font-bold ${t.textMuted} tracking-wider`}>TASKS DUE TODAY</span><p className="text-3xl font-black text-neutral-900 mt-3">0</p><p className="text-xs text-neutral-500 font-medium mt-1">Pending items</p></div>
               <div className={`${t.cardBg} p-5 rounded-2xl shadow-xs border ${t.cardBorder}`}><span className={`text-[10px] font-bold ${t.textMuted} tracking-wider`}>LOGGED HOURS</span><p className="text-3xl font-black text-neutral-900 mt-3">0.0</p><p className="text-xs text-neutral-500 font-medium mt-1">Hours</p></div>
-              <div className={`${t.cardBg} p-5 rounded-2xl shadow-xs border ${t.cardBorder}`}><span className={`text-[10px] font-bold ${t.textMuted} tracking-wider`}>REVENUE & INVOICES</span><p className={`text-2xl font-black ${t.currencyColor} mt-3`}>₱0</p><p className="text-xs text-neutral-500 font-medium mt-1">0 invoices paid</p></div>
+              <div className={`${t.cardBg} p-5 rounded-2xl shadow-xs border ${t.cardBorder}`}><span className={`text-[10px] font-bold ${t.textMuted} tracking-wider`}>REVENUE & INVOICES</span><p className={`text-2xl font-black ${t.currencyColor} mt-3`}>{formatPeso(
+  timeEntries.reduce(
+    (total, entry) =>
+      total +
+      (entry.is_billable
+        ? ((entry.duration_seconds || 0) / 3600) *
+          (Number(entry.hourly_rate) || 0)
+        : 0),
+    0
+  )
+)}</p><p className="text-xs text-neutral-500 font-medium mt-1">0 invoices paid</p></div>
             </div>
 
             <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder} mb-8`}>
@@ -199,38 +845,999 @@ export default function VADashboard() {
 
         {activeTab === 'tasks' && (
           <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
-            <div className="flex justify-between items-center mb-6"><div><h1 className="text-2xl font-black text-neutral-900">📋 Client Tasks</h1><p className="text-sm text-neutral-500 mt-0.5">Track daily task lists, deadlines, and priorities</p></div><button className={`px-4 py-2 ${t.accentBtn} rounded-xl text-sm font-bold shadow-xs transition`}>+ Add Task</button></div>
-            <div className="p-12 text-center bg-neutral-50/50 border border-dashed border-neutral-200 rounded-xl"><p className="text-sm font-medium text-neutral-500">No tasks added yet.</p></div>
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+              <div>
+                <h1 className="text-2xl font-black text-neutral-900">📋 Client Tasks</h1>
+                <p className="text-sm text-neutral-500 mt-0.5">Track daily task lists, deadlines, and priorities</p>
+              </div>
+              <button
+                onClick={openNewTaskForm}
+                className={`px-4 py-2 ${t.accentBtn} rounded-xl text-sm font-bold shadow-xs transition`}
+              >
+                + Add Task
+              </button>
+            </div>
+
+            {taskError && (
+              <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {taskError}
+              </div>
+            )}
+
+            {showTaskForm && (
+              <form onSubmit={handleSaveTask} className="mb-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-neutral-900">{editingTaskId ? 'Edit Task' : 'Add New Task'}</h2>
+                  <button type="button" onClick={resetTaskForm} className="text-sm font-medium text-neutral-500 hover:text-neutral-900">Cancel</button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">Task Title *</label>
+                    <input
+                      required
+                      value={taskTitle}
+                      onChange={(event) => setTaskTitle(event.target.value)}
+                      placeholder="e.g. Prepare weekly social media content"
+                      className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">Client Name</label>
+                    <input
+                      value={clientName}
+                      onChange={(event) => setClientName(event.target.value)}
+                      placeholder="Client or company"
+                      className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">Due Date</label>
+                    <input
+                      type="date"
+                      value={dueDate}
+                      onChange={(event) => setDueDate(event.target.value)}
+                      className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">Priority</label>
+                    <select
+                      value={priority}
+                      onChange={(event) => setPriority(event.target.value as VATask['priority'])}
+                      className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">Status</label>
+                    <select
+                      value={taskStatus}
+                      onChange={(event) => setTaskStatus(event.target.value as VATask['status'])}
+                      className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="completed">Completed</option>
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">Description</label>
+                    <textarea
+                      rows={3}
+                      value={taskDescription}
+                      onChange={(event) => setTaskDescription(event.target.value)}
+                      placeholder="Add task details or instructions..."
+                      className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 mt-4">
+                  <button type="button" onClick={resetTaskForm} className="rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-700">Cancel</button>
+                  <button type="submit" className={`rounded-xl px-5 py-2 text-sm font-bold ${t.accentBtn}`}>
+                    {editingTaskId ? 'Save Changes' : 'Save Task'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {tasksLoading ? (
+              <div className="p-12 text-center text-sm text-neutral-500">Loading tasks...</div>
+            ) : tasks.length === 0 ? (
+              <div className="p-12 text-center bg-neutral-50/50 border border-dashed border-neutral-200 rounded-xl">
+                <p className="text-sm font-medium text-neutral-500">No tasks added yet. Click “Add Task” to create your first task.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {tasks.map((task) => (
+                  <div key={task.id} className="rounded-xl border border-neutral-200 bg-white p-4">
+                    <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                          <h3 className="font-bold text-neutral-900">{task.title}</h3>
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            task.priority === 'high' ? 'bg-red-100 text-red-700' :
+                            task.priority === 'low' ? 'bg-green-100 text-green-700' :
+                            'bg-amber-100 text-amber-700'
+                          }`}>{task.priority.charAt(0).toUpperCase() + task.priority.slice(1)} Priority</span>
+                        </div>
+                        {task.description && <p className="text-sm text-neutral-600 whitespace-pre-wrap mb-2">{task.description}</p>}
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
+                          {task.client_name && <span>👤 {task.client_name}</span>}
+                          {task.due_date && <span>📅 Due {new Date(`${task.due_date}T00:00:00`).toLocaleDateString()}</span>}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          aria-label={`Status for ${task.title}`}
+                          value={task.status}
+                          onChange={(event) => handleTaskStatusChange(task.id, event.target.value as VATask['status'])}
+                          className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-700"
+                        >
+                          <option value="pending">Pending</option>
+                          <option value="in_progress">In Progress</option>
+                          <option value="completed">Completed</option>
+                        </select>
+                        <button onClick={() => openEditTaskForm(task)} className="rounded-lg border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50">Edit</button>
+                        <button onClick={() => handleDeleteTask(task.id)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50">Delete</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {activeTab === 'tracker' && (
-          <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
-            <div className="flex justify-between items-center mb-6"><div><h1 className="text-2xl font-black text-neutral-900">⏱️ Time Tracker</h1><p className="text-sm text-neutral-500 mt-0.5">Log billable hours and monitor active task timers</p></div><button className={`px-4 py-2 ${t.accentBtn} rounded-xl text-sm font-bold shadow-xs transition`}>+ Start Timer</button></div>
-            <div className="p-12 text-center bg-neutral-50/50 border border-dashed border-neutral-200 rounded-xl"><p className="text-sm font-medium text-neutral-500">No time entries recorded.</p></div>
-          </div>
-        )}
+       
+{activeTab === 'tracker' && (
+  <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
+    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+      <div>
+        <h1 className="text-2xl font-black text-neutral-900">⏱️ Time Tracker</h1>
+        <p className="text-sm text-neutral-500 mt-1">
+          Track working hours and monitor billable time
+        </p>
+      </div>
 
-        {activeTab === 'projects' && (
-          <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
-            <div className="flex justify-between items-center mb-6"><div><h1 className="text-2xl font-black text-neutral-900">📁 Projects & Retainers</h1><p className="text-sm text-neutral-500 mt-0.5">Manage ongoing client retainers and milestones</p></div><button className={`px-4 py-2 ${t.accentBtn} rounded-xl text-sm font-bold shadow-xs transition`}>+ New Project</button></div>
-            <div className="p-12 text-center bg-neutral-50/50 border border-dashed border-neutral-200 rounded-xl"><p className="text-sm font-medium text-neutral-500">No projects set up yet.</p></div>
-          </div>
-        )}
+      {!activeTimer && (
+        <button
+          onClick={() => setShowTimerForm(!showTimerForm)}
+          className={`px-4 py-2 ${t.accentBtn} rounded-xl text-sm font-bold`}
+        >
+          + Start Timer
+        </button>
+      )}
+    </div>
 
-        {activeTab === 'invoices' && (
-          <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
-            <div className="flex justify-between items-center mb-6"><div><h1 className="text-2xl font-black text-neutral-900">💳 Invoices & Billing</h1><p className="text-sm text-neutral-500 mt-0.5">Generate client invoices and track payments (₱)</p></div><button className={`px-4 py-2 ${t.accentBtn} rounded-xl text-sm font-bold shadow-xs transition`}>+ Create Invoice</button></div>
-            <div className="p-12 text-center bg-neutral-50/50 border border-dashed border-neutral-200 rounded-xl"><p className="text-sm font-medium text-neutral-500">No invoices generated yet.</p></div>
+    {timeError && (
+      <div className="mb-4 p-3 rounded-xl bg-red-50 text-red-700 text-sm">
+        {timeError}
+      </div>
+    )}
+
+    {showTimerForm && !activeTimer && (
+      <form
+        className="mb-6 p-5 rounded-xl border border-neutral-200 bg-neutral-50 space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleStartTimer();
+        }}
+      >
+        <h2 className="font-bold text-neutral-900">Start a New Timer</h2>
+
+        <div>
+          <label className="block text-xs font-bold mb-1 text-neutral-600">
+            Client Name
+          </label>
+          <input
+            value={timerClientName}
+            onChange={(e) => setTimerClientName(e.target.value)}
+            placeholder="Enter client name"
+            className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold mb-1 text-neutral-600">
+            Task Description *
+          </label>
+          <input
+            required
+            value={timerDescription}
+            onChange={(e) => setTimerDescription(e.target.value)}
+            placeholder="What are you working on?"
+            className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold mb-1 text-neutral-600">
+            Hourly Rate (₱)
+          </label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={hourlyRate}
+            onChange={(e) => setHourlyRate(e.target.value)}
+            className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+          />
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setShowTimerForm(false)}
+            className="px-4 py-2 rounded-xl border text-sm font-semibold"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className={`px-5 py-2 rounded-xl ${t.accentBtn} text-sm font-bold`}
+          >
+            Start Working
+          </button>
+        </div>
+      </form>
+    )}
+
+    {activeTimer && (
+      <div className="mb-6 p-6 rounded-2xl border-2 border-green-200 bg-green-50">
+        <div className="flex justify-between items-center mb-3">
+          <span className="text-sm font-bold text-green-700">
+            ● TIMER RUNNING
+          </span>
+          <span className="text-xs text-green-700">
+            {activeTimer.client_name || 'No client selected'}
+          </span>
+        </div>
+
+        <h2 className="font-bold text-neutral-900">
+          {activeTimer.description || 'Working session'}
+        </h2>
+
+        <p className="text-4xl font-black text-neutral-900 my-5 tabular-nums">
+          {String(Math.floor(elapsedSeconds / 3600)).padStart(2, '0')}:
+          {String(Math.floor((elapsedSeconds % 3600) / 60)).padStart(2, '0')}:
+          {String(elapsedSeconds % 60).padStart(2, '0')}
+        </p>
+
+        <button
+          onClick={handleStopTimer}
+          className="px-6 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm"
+        >
+          ■ Stop Timer
+        </button>
+      </div>
+    )}
+
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-200">
+        <p className="text-xs font-bold text-neutral-500">TOTAL ENTRIES</p>
+        <p className="text-2xl font-black mt-2">{timeEntries.length}</p>
+      </div>
+
+      <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-200">
+        <p className="text-xs font-bold text-neutral-500">COMPLETED HOURS</p>
+        <p className="text-2xl font-black mt-2">
+          {(timeEntries.reduce(
+            (total, entry) => total + (entry.duration_seconds || 0), 0
+          ) / 3600).toFixed(2)}
+        </p>
+      </div>
+
+      <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-200">
+        <p className="text-xs font-bold text-neutral-500">BILLABLE EARNINGS</p>
+        <p className={`text-2xl font-black mt-2 ${t.currencyColor}`}>
+          ₱{timeEntries.reduce(
+            (total, entry) =>
+              total + (
+                entry.is_billable
+                  ? ((entry.duration_seconds || 0) / 3600) * (Number(entry.hourly_rate) || 0)
+                  : 0
+              ), 0
+          ).toFixed(2)}
+        </p>
+      </div>
+    </div>
+
+    <h2 className="font-bold text-neutral-900 mb-4">Time Entry History</h2>
+
+    {timeLoading ? (
+      <p className="text-center py-8 text-sm text-neutral-500">
+        Loading time entries...
+      </p>
+    ) : timeEntries.length === 0 ? (
+      <div className="p-10 text-center bg-neutral-50 border border-dashed border-neutral-200 rounded-xl">
+        <p className="text-3xl mb-2">⏱️</p>
+        <p className="font-semibold text-neutral-700">No time entries yet</p>
+        <p className="text-sm text-neutral-500 mt-1">
+          Start your first timer to record working hours.
+        </p>
+      </div>
+    ) : (
+      <div className="space-y-3">
+        {timeEntries.map((entry) => {
+          const seconds = entry.duration_seconds || 0;
+
+          return (
+            <div
+              key={entry.id}
+              className="p-4 rounded-xl border border-neutral-200 bg-white"
+            >
+              <div className="flex flex-col sm:flex-row sm:justify-between gap-3">
+                <div>
+                  <h3 className="font-bold text-neutral-900">
+                    {entry.description || 'Working session'}
+                  </h3>
+                  <p className="text-xs text-neutral-500 mt-1">
+                    {entry.client_name || 'No client'}
+                  </p>
+                  <p className="text-xs text-neutral-500 mt-1">
+                    {new Date(entry.started_at).toLocaleString()}
+                  </p>
+                </div>
+
+                <div className="sm:text-right">
+                  <p className="font-black text-lg text-neutral-900">
+                    {entry.ended_at
+                      ? `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
+                      : 'Running'}
+                  </p>
+                  <p className="text-xs text-neutral-500">
+                    {entry.ended_at
+                      ? formatPeso((seconds / 3600) * Number(entry.hourly_rate || 0))
+                      : 'Active session'}
+                  </p>
+                  <span className={`inline-block mt-2 text-xs font-semibold px-2 py-1 rounded-full ${
+                    entry.ended_at
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    {entry.ended_at ? 'Completed' : 'In Progress'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </div>
+)}
+
+
+    
+{activeTab === 'projects' && (
+  <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
+    <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
+      <div>
+        <h1 className="text-2xl font-black text-neutral-900">
+          📁 Projects & Retainers
+        </h1>
+        <p className="text-sm text-neutral-500 mt-1">
+          Manage ongoing client projects and retainers
+        </p>
+      </div>
+
+      <button
+        onClick={openNewProjectForm}
+        className={`px-4 py-2 ${t.accentBtn} rounded-xl text-sm font-bold`}
+      >
+        + New Project
+      </button>
+    </div>
+
+    {projectError && (
+      <div role="alert" className="mb-4 p-3 rounded-xl bg-red-50 text-red-700 text-sm">
+        {projectError}
+      </div>
+    )}
+
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div className="p-4 rounded-xl bg-neutral-50 border">
+        <p className="text-xs font-bold text-neutral-500">TOTAL PROJECTS</p>
+        <p className="text-2xl font-black mt-2">{projects.length}</p>
+      </div>
+
+      <div className="p-4 rounded-xl bg-neutral-50 border">
+        <p className="text-xs font-bold text-neutral-500">ACTIVE PROJECTS</p>
+        <p className="text-2xl font-black mt-2">
+          {projects.filter(p => p.status === 'active').length}
+        </p>
+      </div>
+
+      <div className="p-4 rounded-xl bg-neutral-50 border">
+        <p className="text-xs font-bold text-neutral-500">COMPLETED PROJECTS</p>
+        <p className="text-2xl font-black mt-2">
+          {projects.filter(p => p.status === 'completed').length}
+        </p>
+      </div>
+    </div>
+
+    {showProjectForm && (
+      <form
+        onSubmit={handleSaveProject}
+        className="mb-6 p-5 rounded-2xl border border-neutral-200 bg-neutral-50"
+      >
+        <div className="flex justify-between items-center mb-5">
+          <h2 className="text-lg font-bold text-neutral-900">
+            {editingProjectId ? 'Edit Project' : 'Create New Project'}
+          </h2>
+
+          <button
+            type="button"
+            onClick={resetProjectForm}
+            className="text-sm text-neutral-500 hover:text-neutral-900"
+          >
+            Cancel
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold text-neutral-600 mb-1">
+              Project Name *
+            </label>
+            <input
+              required
+              value={projectName}
+              onChange={e => setProjectName(e.target.value)}
+              placeholder="Enter project name"
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+            />
           </div>
-        )}
+
+          <div>
+            <label className="block text-xs font-bold text-neutral-600 mb-1">
+              Client Name
+            </label>
+            <input
+              value={projectClient}
+              onChange={e => setProjectClient(e.target.value)}
+              placeholder="Client or company"
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-neutral-600 mb-1">
+              Project Status
+            </label>
+            <select
+              value={projectStatus}
+              onChange={e => setProjectStatus(e.target.value as VAProject['status'])}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+            >
+              <option value="active">Active</option>
+              <option value="completed">Completed</option>
+              <option value="on_hold">On Hold</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-neutral-600 mb-1">
+              Start Date
+            </label>
+            <input
+              type="date"
+              value={projectStartDate}
+              onChange={e => setProjectStartDate(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-neutral-600 mb-1">
+              Deadline
+            </label>
+            <input
+              type="date"
+              value={projectDueDate}
+              onChange={e => setProjectDueDate(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-neutral-600 mb-1">
+              Project Budget / Retainer (₱)
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={retainerAmount}
+              onChange={e => setRetainerAmount(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-neutral-600 mb-1">
+              Billing Cycle
+            </label>
+            <select
+              value={billingCycle}
+              onChange={e => setBillingCycle(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+            >
+              <option value="one_time">One-Time</option>
+              <option value="weekly">Weekly</option>
+              <option value="biweekly">Biweekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold text-neutral-600 mb-1">
+              Project Description
+            </label>
+            <textarea
+              rows={3}
+              value={projectDescription}
+              onChange={e => setProjectDescription(e.target.value)}
+              placeholder="Describe the project and deliverables..."
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-5">
+          <button
+            type="button"
+            onClick={resetProjectForm}
+            className="px-4 py-2 rounded-xl border bg-white text-sm font-semibold"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="submit"
+            className={`px-5 py-2 rounded-xl ${t.accentBtn} text-sm font-bold`}
+          >
+            {editingProjectId ? 'Save Changes' : 'Save Project'}
+          </button>
+        </div>
+      </form>
+    )}
+
+    {projectsLoading ? (
+      <div className="p-10 text-center text-neutral-500">
+        Loading projects...
+      </div>
+    ) : projects.length === 0 ? (
+      <div className="p-12 text-center bg-neutral-50 border border-dashed border-neutral-200 rounded-xl">
+        <p className="text-4xl mb-3">📁</p>
+        <p className="font-semibold text-neutral-700">No projects yet</p>
+        <p className="text-sm text-neutral-500 mt-1">
+          Click New Project to add your first project.
+        </p>
+      </div>
+    ) : (
+      <div className="space-y-4">
+        {projects.map(project => (
+          <div
+            key={project.id}
+            className="p-5 rounded-xl border border-neutral-200 bg-white"
+          >
+            <div className="flex flex-col md:flex-row md:justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <h3 className="font-bold text-lg text-neutral-900">
+                    {project.project_name}
+                  </h3>
+
+                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                    project.status === 'completed'
+                      ? 'bg-green-100 text-green-700'
+                      : project.status === 'on_hold'
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {project.status === 'on_hold'
+                      ? 'On Hold'
+                      : project.status.charAt(0).toUpperCase() + project.status.slice(1)}
+                  </span>
+                </div>
+
+                {project.client_name && (
+                  <p className="text-sm text-neutral-600">
+                    👤 {project.client_name}
+                  </p>
+                )}
+
+                {project.description && (
+                  <p className="text-sm text-neutral-500 mt-2 whitespace-pre-wrap">
+                    {project.description}
+                  </p>
+                )}
+
+                <div className="flex flex-wrap gap-4 mt-3 text-xs text-neutral-500">
+                  {project.start_date && (
+                    <span>📅 Started: {new Date(`${project.start_date}T00:00:00`).toLocaleDateString()}</span>
+                  )}
+                  {project.due_date && (
+                    <span>🏁 Deadline: {new Date(`${project.due_date}T00:00:00`).toLocaleDateString()}</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="md:text-right">
+                <p className={`text-xl font-black ${t.currencyColor}`}>
+                  ₱{formatPeso(project.retainer_amount)}
+                </p>
+                <p className="text-xs text-neutral-500 mb-3">
+                  {project.billing_cycle.replace('_', ' ')}
+                </p>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => openEditProjectForm(project)}
+                    className="px-3 py-2 rounded-lg border text-xs font-semibold hover:bg-neutral-50"
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteProject(project.id)}
+                    className="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-50"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
+
+
+      
+{activeTab === 'invoices' && (
+  <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
+    <div className="flex justify-between items-center mb-6">
+      <div>
+        <h1 className="text-2xl font-black text-neutral-900">
+          💳 Invoices & Billing
+        </h1>
+        <p className="text-sm text-neutral-500 mt-0.5">
+          Generate client invoices and track payments (₱)
+        </p>
+      </div>
+
+      <button
+        onClick={() => {
+          resetInvoiceForm();
+          setShowInvoiceForm(true);
+        }}
+        className={`px-4 py-2 ${t.accentBtn} rounded-xl text-sm font-bold`}
+      >
+        + Create Invoice
+      </button>
+    </div>
+
+    {invoiceError && (
+      <div className="mb-4 p-3 rounded-xl bg-red-50 text-red-700 text-sm">
+        {invoiceError}
+      </div>
+    )}
+
+    {showInvoiceForm && (
+      <form
+        onSubmit={handleSaveInvoice}
+        className="mb-6 p-5 rounded-xl border border-neutral-200 bg-neutral-50"
+      >
+        <div className="flex justify-between items-center mb-4">
+         <h2 className="text-lg font-bold">
+  {editingInvoiceId ? 'Edit Invoice' : 'Create New Invoice'}
+</h2>
+          <button
+            type="button"
+            onClick={resetInvoiceForm}
+            className="text-sm text-neutral-500"
+          >
+            Cancel
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-bold mb-1">
+              Client Name *
+            </label>
+            <input
+              required
+              value={invoiceClient}
+              onChange={e => setInvoiceClient(e.target.value)}
+              className="w-full rounded-xl border bg-white px-4 py-2.5 text-sm"
+              placeholder="Enter client name"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold mb-1">
+              Invoice Amount (₱) *
+            </label>
+            <input
+              type="number"
+              required
+              min="0.01"
+              step="0.01"
+              value={invoiceAmount}
+              onChange={e => setInvoiceAmount(e.target.value)}
+              className="w-full rounded-xl border bg-white px-4 py-2.5 text-sm"
+              placeholder="0.00"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold mb-1">
+              Issue Date *
+            </label>
+            <input
+              type="date"
+              required
+              value={invoiceIssueDate}
+              onChange={e => setInvoiceIssueDate(e.target.value)}
+              className="w-full rounded-xl border bg-white px-4 py-2.5 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold mb-1">
+              Due Date
+            </label>
+            <input
+              type="date"
+              value={invoiceDueDate}
+              onChange={e => setInvoiceDueDate(e.target.value)}
+              className="w-full rounded-xl border bg-white px-4 py-2.5 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold mb-1">
+              Payment Status
+            </label>
+            <select
+              value={invoiceStatus}
+              onChange={e => setInvoiceStatus(e.target.value as VAInvoice['status'])}
+              className="w-full rounded-xl border bg-white px-4 py-2.5 text-sm"
+            >
+              <option value="pending">Pending</option>
+              <option value="paid">Paid</option>
+              <option value="overdue">Overdue</option>
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold mb-1">
+              Description
+            </label>
+            <textarea
+              rows={3}
+              value={invoiceDescription}
+              onChange={e => setInvoiceDescription(e.target.value)}
+              placeholder="Invoice details or services provided..."
+              className="w-full rounded-xl border bg-white px-4 py-2.5 text-sm"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-5">
+          <button
+            type="button"
+            onClick={resetInvoiceForm}
+            className="px-4 py-2 rounded-xl border bg-white text-sm font-semibold"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="submit"
+            className={`px-5 py-2 rounded-xl ${t.accentBtn} text-sm font-bold`}
+          >
+            Save Invoice
+          </button>
+        </div>
+      </form>
+    )}
+
+    {invoicesLoading ? (
+      <p className="text-center p-8 text-neutral-500">
+        Loading invoices...
+      </p>
+    ) : invoices.length === 0 ? (
+      <div className="p-12 text-center bg-neutral-50 border border-dashed rounded-xl">
+        <p className="text-sm text-neutral-500">
+          No invoices generated yet.
+        </p>
+      </div>
+    ) : (
+      <div className="space-y-3">
+        {invoices.map(invoice => (
+          <div
+            key={invoice.id}
+            className="p-5 rounded-xl border border-neutral-200 bg-white"
+          >
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-neutral-900">
+                  {invoice.invoice_number}
+                </h3>
+                <p className="text-sm text-neutral-600 mt-1">
+                  👤 {invoice.client_name}
+                </p>
+                {invoice.description && (
+                  <p className="text-sm text-neutral-500 mt-1">
+                    {invoice.description}
+                  </p>
+                )}
+                <p className="text-xs text-neutral-500 mt-2">
+                  Issued: {invoice.issue_date}
+                  {invoice.due_date && ` | Due: ${invoice.due_date}`}
+                </p>
+              </div>
+
+              <div className="sm:text-right">
+                <p className={`text-xl font-black ${t.currencyColor}`}>
+                  ₱{Number(invoice.amount).toLocaleString('en-PH', {
+                    minimumFractionDigits: 2
+                  })}
+                </p>
+                
+               <div className="flex items-center gap-2 mt-2 sm:justify-end">
+  <span className="text-xs font-semibold capitalize">
+    {invoice.status}
+  </span>
+
+  <button
+    type="button"
+    onClick={() => setViewingInvoice(invoice)}
+    className="rounded-lg border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+  >
+    View Invoice
+  </button>
+  <button
+  type="button"
+  onClick={() => openEditInvoiceForm(invoice)}
+  className="rounded-lg border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+>
+  Edit
+</button>
+</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
+
+
+{viewingInvoice && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-bold text-neutral-900">
+          Invoice Details
+        </h2>
+
+        <button
+          onClick={() => setViewingInvoice(null)}
+          className="text-neutral-500 hover:text-neutral-900"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="border-b border-neutral-200 pb-5 mb-5">
+        <h3 className="text-2xl font-black text-neutral-900">
+          VA & Freelance
+        </h3>
+        <p className="text-sm text-neutral-500">
+          INVOICE
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <p className="text-xs text-neutral-500">Invoice Number</p>
+          <p className="font-bold">
+            {viewingInvoice.invoice_number}
+          </p>
+        </div>
+
+        <div>
+          <p className="text-xs text-neutral-500">Client</p>
+          <p className="font-semibold">
+            {viewingInvoice.client_name}
+          </p>
+        </div>
+
+        <div>
+          <p className="text-xs text-neutral-500">Description</p>
+          <p>
+            {viewingInvoice.description || 'No description'}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-xs text-neutral-500">Issue Date</p>
+            <p>{viewingInvoice.issue_date}</p>
+          </div>
+
+          <div>
+            <p className="text-xs text-neutral-500">Due Date</p>
+            <p>{viewingInvoice.due_date || 'Not specified'}</p>
+          </div>
+        </div>
+
+        <div className="border-t border-neutral-200 pt-4">
+          <p className="text-xs text-neutral-500">Total Amount</p>
+          <p className="text-3xl font-black text-amber-600">
+            ₱{Number(viewingInvoice.amount).toLocaleString('en-PH', {
+              minimumFractionDigits: 2
+            })}
+          </p>
+        </div>
+
+        <div>
+          <p className="text-xs text-neutral-500">Payment Status</p>
+          <p className="font-bold capitalize">
+            {viewingInvoice.status}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex justify-end mt-6">
+        <button
+          onClick={() => setViewingInvoice(null)}
+          className="rounded-xl bg-amber-600 px-5 py-2 text-sm font-bold text-white hover:bg-amber-700"
+        >
+          Close
+        </button>
+      </div>
+
+    </div>
+  </div>
+)}
 
         {activeTab === 'reports' && (
           <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
             <h1 className="text-2xl font-black text-neutral-900 mb-1">📈 Performance Reports</h1><p className="text-sm text-neutral-500 mb-6">Monthly analytics on billable hours and earnings</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="p-6 bg-neutral-50/50 rounded-2xl border border-neutral-200"><h3 className="font-bold text-neutral-800 mb-2">Total Monthly Logged Hours</h3><p className={`text-3xl font-black ${t.currencyColor}`}>0.0 hrs</p></div>
-              <div className="p-6 bg-neutral-50/50 rounded-2xl border border-neutral-200"><h3 className="font-bold text-neutral-800 mb-2">Total Monthly Revenue</h3><p className={`text-3xl font-black ${t.currencyColor}`}>₱0</p></div>
+              <div className="p-6 bg-neutral-50/50 rounded-2xl border border-neutral-200"><h3 className="font-bold text-neutral-800 mb-2">Total Monthly Revenue</h3><p className={`text-3xl font-black ${t.currencyColor}`}>{formatPeso(
+  timeEntries.reduce(
+    (total, entry) =>
+      total +
+      (entry.is_billable
+        ? ((entry.duration_seconds || 0) / 3600) *
+          (Number(entry.hourly_rate) || 0)
+        : 0),
+    0
+  )
+)}</p></div>
             </div>
           </div>
         )}
