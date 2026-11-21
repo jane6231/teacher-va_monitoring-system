@@ -103,6 +103,47 @@ export default function VADashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [theme, setTheme] = useState('charcoal');
+const [calendarDate, setCalendarDate] = useState<Date | null>(null);
+const [activePeriod, setActivePeriod] = useState('month');
+
+useEffect(() => {
+  setCalendarDate(new Date());
+}, []);
+const handleToday = () => {
+  setCalendarDate(new Date());
+  setActivePeriod('today');
+};
+
+const handleThisWeek = () => {
+  setCalendarDate(new Date());
+  setActivePeriod('week');
+};
+
+const handleThisMonth = () => {
+  setCalendarDate(new Date());
+  setActivePeriod('month');
+};
+
+const handleThisYear = () => {
+  setCalendarDate(new Date(new Date().getFullYear(), 0, 1));
+  setActivePeriod('year');
+};
+
+const handlePrevMonth = () => {
+  setCalendarDate(prev => {
+    const date = prev ?? new Date();
+    return new Date(date.getFullYear(), date.getMonth() - 1, 1);
+  });
+  setActivePeriod('month');
+};
+
+const handleNextMonth = () => {
+  setCalendarDate(prev => {
+    const date = prev ?? new Date();
+    return new Date(date.getFullYear(), date.getMonth() + 1, 1);
+  });
+  setActivePeriod('month');
+};
   const [tasks, setTasks] = useState<VATask[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [taskError, setTaskError] = useState('');
@@ -1174,12 +1215,30 @@ const handleDeleteInvoice = async (invoiceId: string) => {
 },
   };
 
-  const t = themes[theme] || themes.charcoal;
+const t = themes[theme] || themes.charcoal;
 
-  const calendarDays = [
-    ...Array(3).fill(null),
-    ...Array.from({ length: 31 }, (_, i) => i + 1)
-  ];
+const displayDate = calendarDate ?? new Date(2000, 0, 1);
+
+const currentYear = displayDate.getFullYear();
+const currentMonthIndex = displayDate.getMonth();
+const monthNames = [
+  'January', 'February', 'March', 'April',
+  'May', 'June', 'July', 'August',
+  'September', 'October', 'November', 'December'
+];
+
+const currentMonthName = monthNames[currentMonthIndex];
+const firstDayIndex =
+  (new Date(currentYear, currentMonthIndex, 1).getDay() + 6) % 7;
+
+const totalDaysInMonth =
+  new Date(currentYear, currentMonthIndex + 1, 0).getDate();
+
+const calendarDays = [
+  ...Array(firstDayIndex).fill(null),
+  ...Array.from({ length: totalDaysInMonth }, (_, i) => i + 1)
+];
+
 
   return (
     <div className={`flex min-h-screen w-full max-w-full overflow-x-hidden ${t.bgMain} text-neutral-900 transition-colors duration-300`}>
@@ -1250,12 +1309,55 @@ const handleDeleteInvoice = async (invoiceId: string) => {
                 <h1 className="text-xl sm:text-2xl font-black text-neutral-900 flex items-center gap-2">Virtual Assistant Dashboard 🚀</h1>
                 <p className="text-sm text-neutral-500 mt-0.5">Manage your active client tasks, logged hours, and billing</p>
               </div>
-              <div className="flex w-full flex-wrap items-center gap-1.5 rounded-xl border border-neutral-200 bg-neutral-100/80 p-1.5 text-xs font-medium sm:w-auto sm:gap-2 sm:text-sm">
-                <button className="rounded-lg px-2.5 py-2 text-neutral-600 transition hover:bg-white sm:px-3 sm:py-1.5">Today</button>
-                <button className="rounded-lg px-2.5 py-2 text-neutral-600 transition hover:bg-white sm:px-3 sm:py-1.5">This Week</button>
-                <button className={`rounded-lg px-2.5 py-2 text-white shadow-xs sm:px-3 sm:py-1.5 ${t.accentBtn}`}>This Month</button>
-                <button className="rounded-lg px-2.5 py-2 text-neutral-600 transition hover:bg-white sm:px-3 sm:py-1.5">This Year</button>
-              </div>
+         
+<div className="flex items-center gap-2 bg-neutral-100/80 p-1.5 rounded-xl border border-neutral-200 text-sm font-medium">
+
+  <button
+    onClick={handleToday}
+    className={`px-3 py-1.5 rounded-lg transition ${
+      activePeriod === 'today'
+        ? `${t.accentBtn} shadow-xs`
+        : 'text-neutral-600 hover:bg-white'
+    }`}
+  >
+    Today
+  </button>
+
+  <button
+    onClick={handleThisWeek}
+    className={`px-3 py-1.5 rounded-lg transition ${
+      activePeriod === 'week'
+        ? `${t.accentBtn} shadow-xs`
+        : 'text-neutral-600 hover:bg-white'
+    }`}
+  >
+    This Week
+  </button>
+
+  <button
+    onClick={handleThisMonth}
+    className={`px-3 py-1.5 rounded-lg transition ${
+      activePeriod === 'month'
+        ? `${t.accentBtn} shadow-xs`
+        : 'text-neutral-600 hover:bg-white'
+    }`}
+  >
+    This Month
+  </button>
+
+  <button
+    onClick={handleThisYear}
+    className={`px-3 py-1.5 rounded-lg transition ${
+      activePeriod === 'year'
+        ? `${t.accentBtn} shadow-xs`
+        : 'text-neutral-600 hover:bg-white'
+    }`}
+  >
+    This Year
+  </button>
+
+</div>
+
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -1281,7 +1383,35 @@ const handleDeleteInvoice = async (invoiceId: string) => {
             </div>
 
             <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
-              <h2 className="text-xl font-black text-neutral-900 mb-6">October 2026</h2>
+              
+<div className="flex items-center justify-between mb-6">
+
+  <h2 className="text-xl font-black text-neutral-900">
+    {currentMonthName} {currentYear}
+  </h2>
+
+  <div className="flex items-center gap-2">
+
+    <button
+      onClick={handlePrevMonth}
+      aria-label="Previous month"
+      className="w-9 h-9 flex items-center justify-center rounded-lg border border-neutral-200 hover:bg-neutral-100 transition text-neutral-700"
+    >
+      ←
+    </button>
+
+    <button
+      onClick={handleNextMonth}
+      aria-label="Next month"
+      className="w-9 h-9 flex items-center justify-center rounded-lg border border-neutral-200 hover:bg-neutral-100 transition text-neutral-700"
+    >
+      →
+    </button>
+
+  </div>
+
+</div>
+
               <div className={`grid grid-cols-7 text-center font-bold text-xs ${t.textMuted} py-3 border-b border-neutral-100`}><span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span></div>
               <div className="grid grid-cols-7 gap-1 sm:gap-2 pt-4">
                 {calendarDays.map((day, index) => (
