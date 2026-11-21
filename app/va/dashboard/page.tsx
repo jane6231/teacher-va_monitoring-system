@@ -488,7 +488,7 @@ async function deleteDocument(documentId: string) {
 }
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem('va_dashboard_theme');
+    const savedTheme = localStorage.getItem('teacher_dashboard_theme');
     if (savedTheme) {
       setTheme(savedTheme);
     }
@@ -643,10 +643,10 @@ const totalClientEarnings = clientWiseEarnings.reduce(
     return invoiceTotal + manualTotal;
   });
 
-  const handleThemeChange = (newTheme: string) => {
-    setTheme(newTheme);
-    localStorage.setItem('va_dashboard_theme', newTheme);
-  };
+ const handleThemeChange = (newTheme: string) => {
+  setTheme(newTheme);
+  localStorage.setItem('teacher_dashboard_theme', newTheme);
+};
 
   const resetTaskForm = () => {
     setEditingTaskId(null);
