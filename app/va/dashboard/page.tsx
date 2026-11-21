@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 
@@ -68,6 +68,7 @@ type VABIRAdjustment = {
   description: string;
   amount: number;
   source: string | null;
+  document_url: string | null;
   created_at: string;
 };
 
@@ -178,8 +179,16 @@ const [birIncomeDescription, setBirIncomeDescription] = useState('');
 const [birIncomeDate, setBirIncomeDate] = useState('');
 const [birIncomeAmount, setBirIncomeAmount] = useState('');
 const [birIncomeSource, setBirIncomeSource] = useState('Other reportable income');
+const [birIncomeDocumentUrl, setBirIncomeDocumentUrl] = useState('');
 const [editingBirAdjustmentId, setEditingBirAdjustmentId] = useState<string | null>(null);
 const [birAdjustmentSaving, setBirAdjustmentSaving] = useState(false);
+const birIncomeFormRef = useRef<HTMLFormElement | null>(null);
+
+useEffect(() => {
+  if (showBirAdjustmentForm && editingBirAdjustmentId) {
+    birIncomeFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}, [showBirAdjustmentForm, editingBirAdjustmentId]);
 
 useEffect(() => {
   const year = new Date().getFullYear();
@@ -287,6 +296,7 @@ function resetBIRAdjustmentForm() {
   setBirIncomeAmount('');
   setBirIncomeDate('');
   setBirIncomeSource('Other reportable income');
+  setBirIncomeDocumentUrl('');
   setBirAdjustmentError('');
   setShowBirAdjustmentForm(false);
 }
@@ -297,6 +307,7 @@ function editBIRAdjustment(item: VABIRAdjustment) {
   setBirIncomeAmount(Number(item.amount).toLocaleString('en-PH', { maximumFractionDigits: 2 }));
   setBirIncomeDate(item.income_date);
   setBirIncomeSource(item.source || 'Other reportable income');
+  setBirIncomeDocumentUrl(item.document_url || '');
   setBirAdjustmentError('');
   setShowBirAdjustmentForm(true);
 }
@@ -319,6 +330,7 @@ async function saveBIRAdjustment(event: FormEvent<HTMLFormElement>) {
     description: birIncomeDescription.trim(),
     amount,
     source: birIncomeSource,
+    document_url: birIncomeDocumentUrl.trim() || null,
   };
 
   const query = editingBirAdjustmentId
@@ -2468,7 +2480,7 @@ const handleDeleteInvoice = async (invoiceId: string) => {
             </div>
 
             {showBirAdjustmentForm && (
-              <form onSubmit={saveBIRAdjustment} className="rounded-2xl border border-neutral-200 bg-neutral-50 p-5 mb-6 space-y-4">
+              <form ref={birIncomeFormRef} id="bir-income-form" onSubmit={saveBIRAdjustment} className="relative z-20 rounded-2xl border border-neutral-200 bg-neutral-50 p-5 mb-6 space-y-4">
                 <h3 className="font-bold text-neutral-900">{editingBirAdjustmentId ? 'Edit manual income entry' : 'Add manual reportable income'}</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -2501,6 +2513,19 @@ const handleDeleteInvoice = async (invoiceId: string) => {
                       <option>Platform income</option><option>Other professional fees</option>
                     </select>
                   </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">SUPPORTING DOCUMENT LINK (OPTIONAL)</label>
+                    <input
+                      type="url"
+                      value={birIncomeDocumentUrl}
+                      onChange={e => setBirIncomeDocumentUrl(e.target.value)}
+                      placeholder="https://drive.google.com/..."
+                      className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm"
+                    />
+                    <p className="text-xs text-neutral-500 mt-1">
+                      Add a Google Drive, OneDrive, Dropbox, or other share link for the receipt or supporting record.
+                    </p>
+                  </div>
                 </div>
                 {birAdjustmentError && <p className="text-sm text-red-600">{birAdjustmentError}</p>}
                 <div className="flex justify-end gap-2">
@@ -2519,10 +2544,26 @@ const handleDeleteInvoice = async (invoiceId: string) => {
                 <div className="space-y-2">
                   {birYearAdjustments.map(item => (
                     <div key={item.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-white p-3">
-                      <div><p className="font-semibold text-sm text-neutral-900">{item.description}</p>
-                        <p className="text-xs text-neutral-500">{item.income_date} · {item.source || 'Manual entry'}</p></div>
+                      <div className="min-w-0"><p className="font-semibold text-sm text-neutral-900">{item.description}</p>
+                        <p className="text-xs text-neutral-500">{item.income_date} · {item.source || 'Manual entry'}</p>
+                        {item.document_url && (
+                          <a href={item.document_url} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 mt-1 text-xs font-semibold text-blue-700 hover:underline">
+                            ↗ Open supporting document
+                          </a>
+                        )}</div>
                       <div className="flex items-center gap-3"><span className="font-bold text-neutral-900">{formatPeso(item.amount)}</span>
-                        <button type="button" onClick={() => editBIRAdjustment(item)} className="text-xs font-semibold text-amber-700">Edit</button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            editBIRAdjustment(item);
+                          }}
+                          className="relative z-30 pointer-events-auto cursor-pointer rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        >
+                          Edit
+                        </button>
                         <button type="button" onClick={() => deleteBIRAdjustment(item.id)} className="text-xs font-semibold text-red-600">Delete</button></div>
                     </div>
                   ))}
