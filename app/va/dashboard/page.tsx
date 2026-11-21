@@ -421,7 +421,6 @@ async function saveDocument(event: FormEvent<HTMLFormElement>) {
   }
 
   await loadDocuments(user.id);
-await loadBIRAdjustments(user.id);
   setDocumentSaving(false);
   resetDocumentForm();
 }
@@ -482,6 +481,7 @@ await loadTimeEntries(user.id);
 await loadProjects(user.id);
 await loadInvoices(user.id);
 await loadDocuments(user.id);
+await loadBIRAdjustments(user.id);
       setLoading(false);
     }
     getUser();
@@ -786,6 +786,22 @@ const handleStopTimer = async () => {
   setElapsedSeconds(0);
 };
 
+const handleDeleteTimeEntry = async (entryId: string) => {
+  if (!user || !window.confirm('Delete this time entry? This cannot be undone.')) return;
+  setTimeError('');
+  const { error } = await supabase.from('va_time_entries')
+    .delete().eq('id', entryId).eq('user_id', user.id);
+  if (error) {
+    setTimeError(error.message);
+    return;
+  }
+  setTimeEntries(prev => prev.filter(entry => entry.id !== entryId));
+  if (activeTimer?.id === entryId) {
+    setActiveTimer(null);
+    setElapsedSeconds(0);
+  }
+};
+
 
 const resetProjectForm = () => {
   setEditingProjectId(null);
@@ -1008,6 +1024,19 @@ const handleSaveInvoice = async (
   }
 
   resetInvoiceForm();
+};
+
+const handleDeleteInvoice = async (invoiceId: string) => {
+  if (!user || !window.confirm('Delete this invoice? This cannot be undone.')) return;
+  setInvoiceError('');
+  const { error } = await supabase.from('va_invoices')
+    .delete().eq('id', invoiceId).eq('user_id', user.id);
+  if (error) {
+    setInvoiceError(error.message);
+    return;
+  }
+  setInvoices(prev => prev.filter(invoice => invoice.id !== invoiceId));
+  if (viewingInvoice?.id === invoiceId) setViewingInvoice(null);
 };
 
 
@@ -1566,6 +1595,13 @@ const handleSaveInvoice = async (
                   }`}>
                     {entry.ended_at ? 'Completed' : 'In Progress'}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteTimeEntry(entry.id)}
+                    className="mt-3 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
+                  >
+                    Delete Entry
+                  </button>
                 </div>
               </div>
             </div>
@@ -2079,6 +2115,13 @@ const handleSaveInvoice = async (
 >
   Edit
 </button>
+  <button
+    type="button"
+    onClick={() => handleDeleteInvoice(invoice.id)}
+    className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
+  >
+    Delete
+  </button>
 </div>
               </div>
             </div>
