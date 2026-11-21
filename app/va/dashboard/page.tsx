@@ -171,6 +171,13 @@ const [documentUrl, setDocumentUrl] = useState('');
 const [documentDate, setDocumentDate] = useState('');
 const [documentNotes, setDocumentNotes] = useState('');
 const [documentSaving, setDocumentSaving] = useState(false);
+const documentFormRef = useRef<HTMLFormElement | null>(null);
+
+useEffect(() => {
+  if (showDocumentForm) {
+    documentFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}, [showDocumentForm, editingDocumentId]);
 const [birAdjustments, setBirAdjustments] = useState<VABIRAdjustment[]>([]);
 const [birAdjustmentsLoading, setBirAdjustmentsLoading] = useState(false);
 const [birAdjustmentError, setBirAdjustmentError] = useState('');
@@ -2625,7 +2632,7 @@ const handleDeleteInvoice = async (invoiceId: string) => {
             )}
 
             {showDocumentForm && (
-              <form onSubmit={saveDocument} className="mb-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-5 space-y-4">
+              <form ref={documentFormRef} onSubmit={saveDocument} className="mb-6 scroll-mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-5 space-y-4">
                 <div className="flex items-center justify-between gap-3">
                   <h2 className="text-lg font-bold text-neutral-900">
                     {editingDocumentId ? 'Edit Document Record' : 'Add BIR Document'}
