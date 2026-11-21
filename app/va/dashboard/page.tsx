@@ -178,6 +178,7 @@ const [birIncomeDescription, setBirIncomeDescription] = useState('');
 const [birIncomeDate, setBirIncomeDate] = useState('');
 const [birIncomeAmount, setBirIncomeAmount] = useState('');
 const [birIncomeSource, setBirIncomeSource] = useState('Other reportable income');
+const [editingBirAdjustmentId, setEditingBirAdjustmentId] = useState<string | null>(null);
 const [birAdjustmentSaving, setBirAdjustmentSaving] = useState(false);
 
 useEffect(() => {
@@ -280,10 +281,30 @@ async function loadBIRAdjustments(userId: string) {
   setBirAdjustmentsLoading(false);
 }
 
+function resetBIRAdjustmentForm() {
+  setEditingBirAdjustmentId(null);
+  setBirIncomeDescription('');
+  setBirIncomeAmount('');
+  setBirIncomeDate('');
+  setBirIncomeSource('Other reportable income');
+  setBirAdjustmentError('');
+  setShowBirAdjustmentForm(false);
+}
+
+function editBIRAdjustment(item: VABIRAdjustment) {
+  setEditingBirAdjustmentId(item.id);
+  setBirIncomeDescription(item.description);
+  setBirIncomeAmount(Number(item.amount).toLocaleString('en-PH', { maximumFractionDigits: 2 }));
+  setBirIncomeDate(item.income_date);
+  setBirIncomeSource(item.source || 'Other reportable income');
+  setBirAdjustmentError('');
+  setShowBirAdjustmentForm(true);
+}
+
 async function saveBIRAdjustment(event: FormEvent<HTMLFormElement>) {
   event.preventDefault();
   if (!user?.id) return;
-  const amount = Number(birIncomeAmount);
+  const amount = Number(birIncomeAmount.replace(/,/g, ''));
   if (!birIncomeDescription.trim() || !birIncomeDate || !Number.isFinite(amount) || amount <= 0) {
     setBirAdjustmentError('Enter a description, date, and amount greater than zero.');
     return;
@@ -291,22 +312,25 @@ async function saveBIRAdjustment(event: FormEvent<HTMLFormElement>) {
 
   setBirAdjustmentSaving(true);
   setBirAdjustmentError('');
-  const { error } = await supabase.from('va_bir_income_adjustments').insert({
+  const payload = {
     user_id: user.id,
     tax_year: Number(birIncomeDate.slice(0, 4)),
     income_date: birIncomeDate,
     description: birIncomeDescription.trim(),
     amount,
     source: birIncomeSource,
-  });
+  };
+
+  const query = editingBirAdjustmentId
+    ? supabase.from('va_bir_income_adjustments').update(payload)
+        .eq('id', editingBirAdjustmentId).eq('user_id', user.id)
+    : supabase.from('va_bir_income_adjustments').insert(payload);
+  const { error } = await query;
 
   if (error) {
     setBirAdjustmentError(error.message);
   } else {
-    setBirIncomeDescription('');
-    setBirIncomeAmount('');
-    setBirIncomeDate('');
-    setShowBirAdjustmentForm(false);
+    resetBIRAdjustmentForm();
     await loadBIRAdjustments(user.id);
   }
   setBirAdjustmentSaving(false);
@@ -2445,7 +2469,7 @@ const handleDeleteInvoice = async (invoiceId: string) => {
 
             {showBirAdjustmentForm && (
               <form onSubmit={saveBIRAdjustment} className="rounded-2xl border border-neutral-200 bg-neutral-50 p-5 mb-6 space-y-4">
-                <h3 className="font-bold text-neutral-900">Add manual reportable income</h3>
+                <h3 className="font-bold text-neutral-900">{editingBirAdjustmentId ? 'Edit manual income entry' : 'Add manual reportable income'}</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-neutral-600 mb-1">DESCRIPTION *</label>
@@ -2454,7 +2478,14 @@ const handleDeleteInvoice = async (invoiceId: string) => {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-neutral-600 mb-1">AMOUNT (₱) *</label>
-                    <input required type="number" min="0.01" step="0.01" value={birIncomeAmount} onChange={e => setBirIncomeAmount(e.target.value)}
+                    <input required type="text" inputMode="decimal" value={birIncomeAmount}
+                      onChange={e => setBirIncomeAmount(e.target.value.replace(/[^0-9.,]/g, ''))}
+                      onBlur={() => {
+                        const parsed = Number(birIncomeAmount.replace(/,/g, ''));
+                        if (birIncomeAmount && Number.isFinite(parsed)) {
+                          setBirIncomeAmount(parsed.toLocaleString('en-PH', { maximumFractionDigits: 2 }));
+                        }
+                      }}
                       placeholder="0.00" className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm"/>
                   </div>
                   <div>
@@ -2473,9 +2504,9 @@ const handleDeleteInvoice = async (invoiceId: string) => {
                 </div>
                 {birAdjustmentError && <p className="text-sm text-red-600">{birAdjustmentError}</p>}
                 <div className="flex justify-end gap-2">
-                  <button type="button" onClick={() => setShowBirAdjustmentForm(false)} className="rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm">Cancel</button>
+                  <button type="button" onClick={resetBIRAdjustmentForm} className="rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm">Cancel</button>
                   <button disabled={birAdjustmentSaving} className={`rounded-xl px-5 py-2 text-sm font-bold text-white ${t.accentBtn} disabled:opacity-50`}>
-                    {birAdjustmentSaving ? 'Saving...' : 'Save Income Entry'}
+                    {birAdjustmentSaving ? 'Saving...' : editingBirAdjustmentId ? 'Update Income Entry' : 'Save Income Entry'}
                   </button>
                 </div>
               </form>
@@ -2491,6 +2522,7 @@ const handleDeleteInvoice = async (invoiceId: string) => {
                       <div><p className="font-semibold text-sm text-neutral-900">{item.description}</p>
                         <p className="text-xs text-neutral-500">{item.income_date} · {item.source || 'Manual entry'}</p></div>
                       <div className="flex items-center gap-3"><span className="font-bold text-neutral-900">{formatPeso(item.amount)}</span>
+                        <button type="button" onClick={() => editBIRAdjustment(item)} className="text-xs font-semibold text-amber-700">Edit</button>
                         <button type="button" onClick={() => deleteBIRAdjustment(item.id)} className="text-xs font-semibold text-red-600">Delete</button></div>
                     </div>
                   ))}
