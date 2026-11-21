@@ -71,6 +71,7 @@ type VAInvoice = {
   issue_date: string;
   due_date: string | null;
   status: 'pending' | 'paid' | 'overdue';
+  receipt_url: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -218,6 +219,7 @@ const [viewingInvoice, setViewingInvoice] = useState<VAInvoice | null>(null);
 
 const [invoiceClient, setInvoiceClient] = useState('');
 const [invoiceDescription, setInvoiceDescription] = useState('');
+const [invoiceReceiptUrl, setInvoiceReceiptUrl] = useState('');
 const [invoiceAmount, setInvoiceAmount] = useState('');
 const [invoiceIssueDate, setInvoiceIssueDate] = useState('');
 const [invoiceDueDate, setInvoiceDueDate] = useState('');
@@ -1149,6 +1151,7 @@ const resetInvoiceForm = () => {
   setEditingInvoiceId(null);
   setInvoiceClient('');
   setInvoiceDescription('');
+  setInvoiceReceiptUrl('');
   setInvoiceAmount('');
   setInvoiceIssueDate(new Date().toISOString().split('T')[0]);
   setInvoiceDueDate('');
@@ -1163,6 +1166,7 @@ const openEditInvoiceForm = (invoice: VAInvoice) => {
 
   setInvoiceClient(invoice.client_name);
   setInvoiceDescription(invoice.description || '');
+  setInvoiceReceiptUrl(invoice.receipt_url || '');
   setInvoiceAmount(String(invoice.amount));
   setInvoiceIssueDate(invoice.issue_date);
   setInvoiceDueDate(invoice.due_date || '');
@@ -1202,6 +1206,7 @@ const handleSaveInvoice = async (
   const invoiceData = {
     client_name: invoiceClient.trim(),
     description: invoiceDescription.trim() || null,
+    receipt_url: invoiceReceiptUrl.trim() || null,
     amount,
     issue_date: invoiceIssueDate,
     due_date: invoiceDueDate || null,
@@ -2480,6 +2485,22 @@ const calendarDays = [
 
           <div className="md:col-span-2">
             <label className="block text-xs font-bold mb-1">
+              Receipt Link (optional)
+            </label>
+            <input
+              type="url"
+              value={invoiceReceiptUrl}
+              onChange={e => setInvoiceReceiptUrl(e.target.value)}
+              placeholder="https://drive.google.com/..."
+              className="w-full rounded-xl border bg-white px-4 py-2.5 text-sm"
+            />
+            <p className="mt-1 text-xs text-neutral-500">
+              Paste a Google Drive, Dropbox, or other link to the payment receipt.
+            </p>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold mb-1">
               Description
             </label>
             <textarea
@@ -2540,6 +2561,16 @@ const calendarDays = [
                   <p className="text-sm text-neutral-500 mt-1">
                     {invoice.description}
                   </p>
+                )}
+                {invoice.receipt_url && (
+                  <a
+                    href={invoice.receipt_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex mt-2 text-sm font-semibold text-blue-600 hover:underline"
+                  >
+                    View Receipt ↗
+                  </a>
                 )}
                 <p className="text-xs text-neutral-500 mt-2">
                   Issued: {invoice.issue_date}
@@ -2637,6 +2668,22 @@ const calendarDays = [
           <p>
             {viewingInvoice.description || 'No description'}
           </p>
+        </div>
+
+        <div>
+          <p className="text-xs text-neutral-500">Payment Receipt</p>
+          {viewingInvoice.receipt_url ? (
+            <a
+              href={viewingInvoice.receipt_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-blue-600 hover:underline"
+            >
+              Open receipt link ↗
+            </a>
+          ) : (
+            <p className="text-neutral-500">No receipt link added</p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4">
