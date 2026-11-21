@@ -59,6 +59,34 @@ type VAInvoice = {
   updated_at: string;
 };
 
+
+type VABIRAdjustment = {
+  id: string;
+  user_id: string;
+  tax_year: number;
+  income_date: string;
+  description: string;
+  amount: number;
+  source: string | null;
+  created_at: string;
+};
+
+type VADocument = {
+  id: string;
+  user_id: string;
+  document_name: string;
+  category: string;
+  tax_year: number;
+  reporting_period: string | null;
+  filing_status: string;
+  document_url: string;
+  document_date: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+
 const formatPeso = (value: number | string | null | undefined) => {
   const amount = Number(value ?? 0);
 
@@ -100,7 +128,6 @@ const [projectDueDate, setProjectDueDate] = useState('');
 const [retainerAmount, setRetainerAmount] = useState('0');
 const [billingCycle, setBillingCycle] = useState('monthly');
 
-
 const [timeEntries, setTimeEntries] = useState<VATimeEntry[]>([]);
 const [timeLoading, setTimeLoading] = useState(false);
 const [activeTimer, setActiveTimer] = useState<VATimeEntry | null>(null);
@@ -125,6 +152,48 @@ const [invoiceDueDate, setInvoiceDueDate] = useState('');
 const [invoiceStatus, setInvoiceStatus] = useState<VAInvoice['status']>('pending');
 useEffect(() => {
   setInvoiceIssueDate(new Date().toISOString().split('T')[0]);
+}, []);
+
+const [documents, setDocuments] = useState<VADocument[]>([]);
+const [documentsLoading, setDocumentsLoading] = useState(false);
+const [documentError, setDocumentError] = useState('');
+const [showDocumentForm, setShowDocumentForm] = useState(false);
+const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null);
+const [selectedTaxYear, setSelectedTaxYear] = useState(0);
+const [currentTaxYear, setCurrentTaxYear] = useState(0);
+const [documentName, setDocumentName] = useState('');
+const [documentCategory, setDocumentCategory] = useState('1701Q');
+const [documentPeriod, setDocumentPeriod] = useState('Q1');
+const [documentFilingStatus, setDocumentFilingStatus] = useState('Filed');
+const [documentUrl, setDocumentUrl] = useState('');
+const [documentDate, setDocumentDate] = useState('');
+const [documentNotes, setDocumentNotes] = useState('');
+const [documentSaving, setDocumentSaving] = useState(false);
+const [birAdjustments, setBirAdjustments] = useState<VABIRAdjustment[]>([]);
+const [birAdjustmentsLoading, setBirAdjustmentsLoading] = useState(false);
+const [birAdjustmentError, setBirAdjustmentError] = useState('');
+const [showBirAdjustmentForm, setShowBirAdjustmentForm] = useState(false);
+const [birIncomeDescription, setBirIncomeDescription] = useState('');
+const [birIncomeDate, setBirIncomeDate] = useState('');
+const [birIncomeAmount, setBirIncomeAmount] = useState('');
+const [birIncomeSource, setBirIncomeSource] = useState('Other reportable income');
+const [birAdjustmentSaving, setBirAdjustmentSaving] = useState(false);
+
+useEffect(() => {
+  const year = new Date().getFullYear();
+  setCurrentTaxYear(year);
+  setSelectedTaxYear(year);
+}, []);
+
+const [reportMonth, setReportMonth] = useState('');
+useEffect(() => {
+  setReportMonth(new Date().toISOString().slice(0, 7));
+}, []);
+
+// Set the chart's reference date after mount to avoid a prerender-time Date mismatch.
+const [chartReferenceDate, setChartReferenceDate] = useState<Date | null>(null);
+useEffect(() => {
+  setChartReferenceDate(new Date());
 }, []);
 
   const router = useRouter();
@@ -192,6 +261,189 @@ async function loadTimeEntries(userId: string) {
   setTimeLoading(false);
 }
 
+async function loadBIRAdjustments(userId: string) {
+  setBirAdjustmentsLoading(true);
+  setBirAdjustmentError('');
+  const { data, error } = await supabase
+    .from('va_bir_income_adjustments')
+    .select('*')
+    .eq('user_id', userId)
+    .order('income_date', { ascending: false });
+
+  if (error) {
+    setBirAdjustmentError(error.message);
+    setBirAdjustments([]);
+  } else {
+    setBirAdjustments((data || []) as VABIRAdjustment[]);
+  }
+  setBirAdjustmentsLoading(false);
+}
+
+async function saveBIRAdjustment(event: FormEvent<HTMLFormElement>) {
+  event.preventDefault();
+  if (!user?.id) return;
+  const amount = Number(birIncomeAmount);
+  if (!birIncomeDescription.trim() || !birIncomeDate || !Number.isFinite(amount) || amount <= 0) {
+    setBirAdjustmentError('Enter a description, date, and amount greater than zero.');
+    return;
+  }
+
+  setBirAdjustmentSaving(true);
+  setBirAdjustmentError('');
+  const { error } = await supabase.from('va_bir_income_adjustments').insert({
+    user_id: user.id,
+    tax_year: Number(birIncomeDate.slice(0, 4)),
+    income_date: birIncomeDate,
+    description: birIncomeDescription.trim(),
+    amount,
+    source: birIncomeSource,
+  });
+
+  if (error) {
+    setBirAdjustmentError(error.message);
+  } else {
+    setBirIncomeDescription('');
+    setBirIncomeAmount('');
+    setBirIncomeDate('');
+    setShowBirAdjustmentForm(false);
+    await loadBIRAdjustments(user.id);
+  }
+  setBirAdjustmentSaving(false);
+}
+
+async function deleteBIRAdjustment(id: string) {
+  if (!user?.id || !window.confirm('Delete this manual BIR income entry?')) return;
+  const { error } = await supabase.from('va_bir_income_adjustments')
+    .delete().eq('id', id).eq('user_id', user.id);
+  if (error) setBirAdjustmentError(error.message);
+  else await loadBIRAdjustments(user.id);
+}
+
+async function loadDocuments(userId: string) {
+  setDocumentsLoading(true);
+  setDocumentError('');
+
+  const { data, error } = await supabase
+    .from('va_documents')
+    .select('*')
+    .eq('user_id', userId)
+    .order('tax_year', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    setDocumentError(error.message);
+    setDocuments([]);
+  } else {
+    setDocuments((data || []) as VADocument[]);
+  }
+
+  setDocumentsLoading(false);
+}
+
+function resetDocumentForm() {
+  setDocumentName('');
+  setDocumentCategory('1701Q');
+  setDocumentPeriod('Q1');
+  setDocumentFilingStatus('Filed');
+  setDocumentUrl('');
+  setDocumentDate('');
+  setDocumentNotes('');
+  setEditingDocumentId(null);
+  setShowDocumentForm(false);
+}
+
+function openNewDocumentForm() {
+  setEditingDocumentId(null);
+  setDocumentName('');
+  setDocumentCategory('1701Q');
+  setDocumentPeriod('Q1');
+  setDocumentFilingStatus('Filed');
+  setDocumentUrl('');
+  setDocumentDate('');
+  setDocumentNotes('');
+  setShowDocumentForm(true);
+}
+
+function openEditDocumentForm(document: VADocument) {
+  setEditingDocumentId(document.id);
+  setDocumentName(document.document_name);
+  setDocumentCategory(document.category);
+  setDocumentPeriod(document.reporting_period || 'N/A');
+  setDocumentFilingStatus(document.filing_status || 'Filed');
+  setDocumentUrl(document.document_url);
+  setDocumentDate(document.document_date || '');
+  setDocumentNotes(document.notes || '');
+  setSelectedTaxYear(document.tax_year);
+  setShowDocumentForm(true);
+}
+
+async function saveDocument(event: FormEvent<HTMLFormElement>) {
+  event.preventDefault();
+
+  if (!user?.id) {
+    setDocumentError('Please sign in again before saving a document.');
+    return;
+  }
+
+  const normalizedUrl = documentUrl.trim();
+  if (!/^https:\/\//i.test(normalizedUrl)) {
+    setDocumentError('Please enter a secure link beginning with https://');
+    return;
+  }
+
+  setDocumentSaving(true);
+  setDocumentError('');
+
+  const payload = {
+    user_id: user.id,
+    document_name: documentName.trim(),
+    category: documentCategory,
+    tax_year: selectedTaxYear,
+    reporting_period: documentPeriod || null,
+    filing_status: documentFilingStatus,
+    document_url: normalizedUrl,
+    document_date: documentDate || null,
+    notes: documentNotes.trim() || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const query = editingDocumentId
+    ? supabase.from('va_documents').update(payload).eq('id', editingDocumentId).eq('user_id', user.id)
+    : supabase.from('va_documents').insert(payload);
+
+  const { error } = await query;
+
+  if (error) {
+    setDocumentError(error.message);
+    setDocumentSaving(false);
+    return;
+  }
+
+  await loadDocuments(user.id);
+await loadBIRAdjustments(user.id);
+  setDocumentSaving(false);
+  resetDocumentForm();
+}
+
+async function deleteDocument(documentId: string) {
+  if (!user?.id || !window.confirm('Delete this document record? The external file itself will not be deleted.')) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from('va_documents')
+    .delete()
+    .eq('id', documentId)
+    .eq('user_id', user.id);
+
+  if (error) {
+    setDocumentError(error.message);
+    return;
+  }
+
+  await loadDocuments(user.id);
+}
+
   useEffect(() => {
     const savedTheme = localStorage.getItem('va_dashboard_theme');
     if (savedTheme) {
@@ -228,6 +480,7 @@ await loadTasks(user.id);
 await loadTimeEntries(user.id);
 await loadProjects(user.id);
 await loadInvoices(user.id);
+await loadDocuments(user.id);
       setLoading(false);
     }
     getUser();
@@ -244,8 +497,7 @@ useEffect(() => {
     const seconds = Math.max(
       0,
       Math.floor(
-        (Date.now() -
-          new Date(activeTimer.started_at).getTime()) / 1000
+        (Date.now() - new Date(activeTimer.started_at).getTime()) / 1000
       )
     );
 
@@ -255,10 +507,97 @@ useEffect(() => {
   updateElapsed();
 
   const interval = window.setInterval(updateElapsed, 1000);
-
   return () => window.clearInterval(interval);
 }, [activeTimer]);
 
+const monthlyRevenueData = chartReferenceDate
+  ? Array.from({ length: 6 }, (_, index) => {
+      const date = new Date(
+        chartReferenceDate.getFullYear(),
+        chartReferenceDate.getMonth(),
+        1
+      );
+      date.setMonth(date.getMonth() - (5 - index));
+
+      const monthKey = `${date.getFullYear()}-${String(
+        date.getMonth() + 1
+      ).padStart(2, '0')}`;
+
+      const revenue = timeEntries
+        .filter(entry =>
+          entry.started_at?.slice(0, 7) === monthKey && entry.is_billable
+        )
+        .reduce(
+          (total, entry) =>
+            total +
+            ((Number(entry.duration_seconds) || 0) / 3600) *
+              (Number(entry.hourly_rate) || 0),
+          0
+        );
+
+      return {
+        month: date.toLocaleDateString('en-US', { month: 'short' }),
+        revenue,
+      };
+    })
+  : [];
+
+const maxMonthlyRevenue = Math.max(
+  ...monthlyRevenueData.map(item => item.revenue),
+  1
+);
+
+const clientWiseEarnings = Object.values(
+  timeEntries.reduce((groups, entry) => {
+    const client = entry.client_name?.trim() || 'Unassigned Client';
+
+    if (!groups[client]) {
+      groups[client] = {
+        client,
+        totalSeconds: 0,
+        totalEarnings: 0,
+      };
+    }
+
+    groups[client].totalSeconds +=
+      Number(entry.duration_seconds) || 0;
+
+    if (entry.is_billable) {
+      groups[client].totalEarnings +=
+        ((Number(entry.duration_seconds) || 0) / 3600) *
+        (Number(entry.hourly_rate) || 0);
+    }
+
+    return groups;
+  }, {} as Record<string, {
+    client: string;
+    totalSeconds: number;
+    totalEarnings: number;
+  }>)
+).sort((a, b) => b.totalEarnings - a.totalEarnings);
+
+const totalClientEarnings = clientWiseEarnings.reduce(
+  (total, item) => total + item.totalEarnings,
+  0
+);
+  const birYearInvoices = invoices.filter(invoice =>
+    invoice.status === 'paid' && invoice.issue_date?.slice(0, 4) === String(selectedTaxYear)
+  );
+  const birYearAdjustments = birAdjustments.filter(item => item.tax_year === selectedTaxYear);
+  const birInvoiceIncome = birYearInvoices.reduce((sum, invoice) => sum + (Number(invoice.amount) || 0), 0);
+  const birManualIncome = birYearAdjustments.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const birGrossIncome = birInvoiceIncome + birManualIncome;
+  const birEightPercentTaxBase = Math.max(0, birGrossIncome - 250000);
+  const birEstimatedTax = birEightPercentTaxBase * 0.08;
+  const birQuarterTotals = [1, 2, 3, 4].map(q => {
+    const invoiceTotal = birYearInvoices.filter(inv => {
+      const month = Number(inv.issue_date.slice(5, 7));
+      return Math.ceil(month / 3) === q;
+    }).reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
+    const manualTotal = birYearAdjustments.filter(item => Math.ceil(Number(item.income_date.slice(5, 7)) / 3) === q)
+      .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    return invoiceTotal + manualTotal;
+  });
 
   const handleThemeChange = (newTheme: string) => {
     setTheme(newTheme);
@@ -767,7 +1106,7 @@ const handleSaveInvoice = async (
             </div>
             <div>
               <h2 className="font-bold text-sm tracking-wide text-white">VA & Freelance</h2>
-              <p className="text-xs opacity-75">Client Portal</p>
+              <p className="text-xs opacity-75">Management System</p>
             </div>
           </div>
 
@@ -778,6 +1117,7 @@ const handleSaveInvoice = async (
             <button onClick={() => setActiveTab('projects')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'projects' ? t.navActive : t.navInactive}`}>📁 Projects</button>
             <button onClick={() => setActiveTab('invoices')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'invoices' ? t.navActive : t.navInactive}`}>💳 Invoices & Billing</button>
             <button onClick={() => setActiveTab('reports')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'reports' ? t.navActive : t.navInactive}`}>📈 Reports</button>
+            <button onClick={() => setActiveTab('documents')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'documents' ? t.navActive : t.navInactive}`}>🧾 BIR Tax Center</button>
           <button
   onClick={() => router.push('/teacher-dashboard')}
   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${t.navInactive}`}
@@ -1477,7 +1817,7 @@ const handleSaveInvoice = async (
 
               <div className="md:text-right">
                 <p className={`text-xl font-black ${t.currencyColor}`}>
-                  ₱{formatPeso(project.retainer_amount)}
+                  {formatPeso(project.retainer_amount)}
                 </p>
                 <p className="text-xs text-neutral-500 mb-3">
                   {project.billing_cycle.replace('_', ' ')}
@@ -1795,9 +2135,7 @@ const handleSaveInvoice = async (
         <div className="border-t border-neutral-200 pt-4">
           <p className="text-xs text-neutral-500">Total Amount</p>
           <p className="text-3xl font-black text-amber-600">
-            ₱{Number(viewingInvoice.amount).toLocaleString('en-PH', {
-              minimumFractionDigits: 2
-            })}
+          {formatPeso(viewingInvoice.amount)}
           </p>
         </div>
 
@@ -1822,24 +2160,511 @@ const handleSaveInvoice = async (
   </div>
 )}
 
-        {activeTab === 'reports' && (
-          <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
-            <h1 className="text-2xl font-black text-neutral-900 mb-1">📈 Performance Reports</h1><p className="text-sm text-neutral-500 mb-6">Monthly analytics on billable hours and earnings</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-6 bg-neutral-50/50 rounded-2xl border border-neutral-200"><h3 className="font-bold text-neutral-800 mb-2">Total Monthly Logged Hours</h3><p className={`text-3xl font-black ${t.currencyColor}`}>0.0 hrs</p></div>
-              <div className="p-6 bg-neutral-50/50 rounded-2xl border border-neutral-200"><h3 className="font-bold text-neutral-800 mb-2">Total Monthly Revenue</h3><p className={`text-3xl font-black ${t.currencyColor}`}>{formatPeso(
-  timeEntries.reduce(
-    (total, entry) =>
-      total +
-      (entry.is_billable
-        ? ((entry.duration_seconds || 0) / 3600) *
-          (Number(entry.hourly_rate) || 0)
-        : 0),
-    0
-  )
-)}</p></div>
+     
+{activeTab === 'reports' && (
+  <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
+    <h1 className="text-2xl font-black text-neutral-900 mb-1">
+      📈 Performance Reports
+    </h1>
+    <p className="text-sm text-neutral-500 mb-6">
+      Monthly analytics on billable hours and earnings
+    </p>
+
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+      {/* TOTAL MONTHLY LOGGED HOURS */}
+      <div className="p-6 bg-neutral-50/50 rounded-2xl border border-neutral-200">
+        <h3 className="font-bold text-neutral-800 mb-2">
+          Total Monthly Logged Hours
+        </h3>
+        <p className={`text-3xl font-black ${t.currencyColor}`}>
+          {(
+            timeEntries
+              .filter(entry =>
+                reportMonth &&
+                entry.started_at?.slice(0, 7) === reportMonth
+              )
+              .reduce(
+                (total, entry) =>
+                  total + (Number(entry.duration_seconds) || 0),
+                0
+              ) / 3600
+          ).toFixed(2)} hrs
+        </p>
+      </div>
+
+      {/* TOTAL MONTHLY REVENUE */}
+      <div className="p-6 bg-neutral-50/50 rounded-2xl border border-neutral-200">
+        <h3 className="font-bold text-neutral-800 mb-2">
+          Total Monthly Revenue
+        </h3>
+        <p className={`text-3xl font-black ${t.currencyColor}`}>
+          {formatPeso(
+            timeEntries
+              .filter(entry =>
+                reportMonth &&
+                entry.started_at?.slice(0, 7) === reportMonth &&
+                entry.is_billable
+              )
+              .reduce(
+                (total, entry) =>
+                  total +
+                  ((Number(entry.duration_seconds) || 0) / 3600) *
+                  (Number(entry.hourly_rate) || 0),
+                0
+              )
+          )}
+        </p>
+      </div>
+
+{/* MONTHLY EARNINGS CHART */}
+<div className="md:col-span-2 mt-6 p-6 bg-neutral-50/50 rounded-2xl border border-neutral-200">
+  <h3 className="text-lg font-bold text-neutral-800 mb-1">
+    Monthly Earnings Overview
+  </h3>
+  <p className="text-sm text-neutral-500 mb-6">
+    Billable earnings over the last 6 months
+  </p>
+
+  <div className="flex items-end justify-between gap-3 h-52">
+    {monthlyRevenueData.map((item, index) => (
+      <div key={index} className="flex-1 flex flex-col items-center justify-end h-full gap-2">
+        <span className="text-xs font-semibold text-neutral-700">
+          {formatPeso(item.revenue)}
+        </span>
+
+        <div className="w-full flex items-end justify-center flex-1">
+          <div
+            className="w-full max-w-16 bg-orange-500 rounded-t-lg transition-all duration-300"
+            style={{
+              height: `${Math.max(
+                item.revenue > 0
+                  ? (item.revenue / maxMonthlyRevenue) * 100
+                  : 0,
+                item.revenue > 0 ? 5 : 0
+              )}%`,
+              minHeight: item.revenue > 0 ? '6px' : '0'
+            }}
+          />
+        </div>
+
+        <span className="text-xs font-bold text-neutral-500">
+          {item.month}
+        </span>
+      </div>
+    ))}
+  </div>
+</div>
+
+    </div>
+
+{/* CLIENT-WISE EARNINGS BREAKDOWN */}
+<div className="mt-6 p-6 bg-white rounded-2xl border border-neutral-200">
+  <h3 className="text-lg font-bold text-neutral-900 mb-1">
+    Client-Wise Earnings Breakdown
+  </h3>
+  <p className="text-sm text-neutral-500 mb-6">
+    Track your working hours and earnings for each client
+  </p>
+
+  <div className="overflow-x-auto">
+    <table className="w-full text-sm text-left">
+      <thead>
+        <tr className="border-b border-neutral-200 text-neutral-500">
+          <th className="py-3">Client</th>
+          <th className="py-3">Logged Hours</th>
+          <th className="py-3">Total Earnings</th>
+          <th className="py-3">Revenue Share</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {clientWiseEarnings.length === 0 ? (
+          <tr>
+            <td colSpan={4} className="py-6 text-center text-neutral-500">
+              No client earnings recorded yet.
+            </td>
+          </tr>
+        ) : (
+          clientWiseEarnings.map((item) => (
+            <tr key={item.client} className="border-b border-neutral-100">
+              <td className="py-4 font-semibold text-neutral-800">
+                {item.client}
+              </td>
+              <td className="py-4 text-neutral-600">
+                {(item.totalSeconds / 3600).toFixed(2)} hrs
+              </td>
+              <td className={`py-4 font-bold ${t.currencyColor}`}>
+                {formatPeso(item.totalEarnings)}
+              </td>
+              <td className="py-4 text-neutral-600">
+                {totalClientEarnings > 0
+                  ? ((item.totalEarnings / totalClientEarnings) * 100).toFixed(1)
+                  : '0.0'}%
+              </td>
+            </tr>
+          ))
+        )}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+  </div>
+)}
+
+
+        {activeTab === 'documents' && (
+          <>
+          <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder} mb-6`}>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+              <div>
+                <h1 className="text-2xl font-black text-neutral-900">🧾 BIR Tax Center</h1>
+                <p className="text-sm text-neutral-500 mt-1">Income accumulation and BIR filing records · Non-VAT · 8% option</p>
+              </div>
+              <div className="w-full md:max-w-xs">
+                <label className="block text-xs font-bold text-neutral-600 mb-2">TAX YEAR</label>
+                <select value={selectedTaxYear || ''} onChange={e => setSelectedTaxYear(Number(e.target.value))}
+                  className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm">
+                  {currentTaxYear > 0 && Array.from({length: currentTaxYear - 1999}, (_, i) => currentTaxYear - i)
+                    .map(year => <option key={year} value={year}>{year}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+              <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+                <p className="text-xs font-bold text-neutral-500">PAID INVOICES (YEAR)</p>
+                <p className="text-2xl font-black text-neutral-900 mt-2">{formatPeso(birInvoiceIncome)}</p>
+                <p className="text-xs text-neutral-500 mt-1">{birYearInvoices.length} paid invoice(s)</p>
+              </div>
+              <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+                <p className="text-xs font-bold text-neutral-500">MANUAL INCOME ADJUSTMENTS</p>
+                <p className="text-2xl font-black text-neutral-900 mt-2">{formatPeso(birManualIncome)}</p>
+                <p className="text-xs text-neutral-500 mt-1">{birYearAdjustments.length} additional entry/entries</p>
+              </div>
+              <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+                <p className="text-xs font-bold text-neutral-500">ACCUMULATED GROSS INCOME</p>
+                <p className="text-2xl font-black text-neutral-900 mt-2">{formatPeso(birGrossIncome)}</p>
+                <p className="text-xs text-neutral-500 mt-1">Paid invoices + manual entries</p>
+              </div>
+              <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+                <p className="text-xs font-bold text-neutral-500">ILLUSTRATIVE 8% ESTIMATE</p>
+                <p className="text-2xl font-black text-amber-600 mt-2">{formatPeso(birEstimatedTax)}</p>
+                <p className="text-xs text-neutral-500 mt-1">Before tax credits and payments</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 mb-6">
+              <p className="text-sm font-bold text-amber-900">Tax estimate – verify before filing</p>
+              <p className="text-sm text-amber-800 mt-1">
+                This preliminary display applies 8% to gross income above ₱250,000, assuming you qualify for the reduction and the 8% election is valid for this year. It does not yet include other income, withholding tax credits, prior-quarter payments, or special tax adjustments. Paid invoice totals use invoice issue dates because the current invoice table has no payment-date field. Confirm the applicable BIR accounting method and dates before relying on this estimate.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-lg font-black text-neutral-900">Quarterly income accumulation</h2>
+                <p className="text-sm text-neutral-500">Paid invoices plus manual reportable-income entries</p>
+              </div>
+              <button type="button" onClick={() => setShowBirAdjustmentForm(v => !v)}
+                className={`px-4 py-2.5 ${t.accentBtn} rounded-xl text-sm font-bold`}>
+                + Add Other BIR Income
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+              {birQuarterTotals.map((amount, index) => (
+                <div key={index} className="rounded-xl border border-neutral-200 bg-white p-4">
+                  <p className="text-xs font-bold text-neutral-500">Q{index + 1}</p>
+                  <p className="text-lg font-black text-neutral-900 mt-1">{formatPeso(amount)}</p>
+                </div>
+              ))}
+            </div>
+
+            {showBirAdjustmentForm && (
+              <form onSubmit={saveBIRAdjustment} className="rounded-2xl border border-neutral-200 bg-neutral-50 p-5 mb-6 space-y-4">
+                <h3 className="font-bold text-neutral-900">Add manual reportable income</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">DESCRIPTION *</label>
+                    <input required value={birIncomeDescription} onChange={e => setBirIncomeDescription(e.target.value)}
+                      placeholder="e.g. Other professional income" className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">AMOUNT (₱) *</label>
+                    <input required type="number" min="0.01" step="0.01" value={birIncomeAmount} onChange={e => setBirIncomeAmount(e.target.value)}
+                      placeholder="0.00" className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">INCOME DATE *</label>
+                    <input required type="date" value={birIncomeDate} onChange={e => setBirIncomeDate(e.target.value)}
+                      className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">SOURCE</label>
+                    <select value={birIncomeSource} onChange={e => setBirIncomeSource(e.target.value)}
+                      className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm">
+                      <option>Other reportable income</option><option>Client payment outside VA invoices</option>
+                      <option>Platform income</option><option>Other professional fees</option>
+                    </select>
+                  </div>
+                </div>
+                {birAdjustmentError && <p className="text-sm text-red-600">{birAdjustmentError}</p>}
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setShowBirAdjustmentForm(false)} className="rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm">Cancel</button>
+                  <button disabled={birAdjustmentSaving} className={`rounded-xl px-5 py-2 text-sm font-bold text-white ${t.accentBtn} disabled:opacity-50`}>
+                    {birAdjustmentSaving ? 'Saving...' : 'Save Income Entry'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <div className="mb-6">
+              <h3 className="font-bold text-neutral-900 mb-3">Manual income entries – {selectedTaxYear}</h3>
+              {birAdjustmentsLoading ? <p className="text-sm text-neutral-500">Loading entries...</p> :
+                birYearAdjustments.length === 0 ? <p className="text-sm text-neutral-500">No manual entries recorded for this year.</p> :
+                <div className="space-y-2">
+                  {birYearAdjustments.map(item => (
+                    <div key={item.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-white p-3">
+                      <div><p className="font-semibold text-sm text-neutral-900">{item.description}</p>
+                        <p className="text-xs text-neutral-500">{item.income_date} · {item.source || 'Manual entry'}</p></div>
+                      <div className="flex items-center gap-3"><span className="font-bold text-neutral-900">{formatPeso(item.amount)}</span>
+                        <button type="button" onClick={() => deleteBIRAdjustment(item.id)} className="text-xs font-semibold text-red-600">Delete</button></div>
+                    </div>
+                  ))}
+                </div>}
+              {birAdjustmentError && !showBirAdjustmentForm && <p className="text-sm text-red-600 mt-2">{birAdjustmentError}</p>}
             </div>
           </div>
+
+          <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+              <div>
+                <h1 className="text-2xl font-black text-neutral-900">📂 BIR Document Vault</h1>
+                <p className="text-sm text-neutral-500 mt-1">
+                  Keep links to your filed returns, payment receipts, and supporting records.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={openNewDocumentForm}
+                className={`px-5 py-2.5 ${t.accentBtn} rounded-xl text-sm font-bold`}
+              >
+                + Add Document
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 mb-6">
+              <p className="text-sm font-bold text-amber-900">External links only</p>
+              <p className="text-sm text-amber-800 mt-1">
+                Add a Google Drive, OneDrive, or Dropbox link. The scanned file stays in your cloud storage;
+                this dashboard saves only its link and document details.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-end gap-4 mb-6">
+              <div className="w-full sm:max-w-xs">
+                <label className="block text-xs font-bold text-neutral-600 mb-2">TAX YEAR</label>
+                <select
+                  value={selectedTaxYear || ''}
+                  onChange={(e) => setSelectedTaxYear(Number(e.target.value))}
+                  className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-800"
+                >
+                  {currentTaxYear > 0 && Array.from(
+                    { length: currentTaxYear - 1999 },
+                    (_, index) => currentTaxYear - index
+                  ).map(year => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="text-sm text-neutral-500">
+                {documents.filter(doc => doc.tax_year === selectedTaxYear).length} record(s) for {selectedTaxYear || 'selected year'}
+              </div>
+            </div>
+
+            {documentError && !showDocumentForm && (
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {documentError}
+              </div>
+            )}
+
+            {showDocumentForm && (
+              <form onSubmit={saveDocument} className="mb-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-5 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-bold text-neutral-900">
+                    {editingDocumentId ? 'Edit Document Record' : 'Add BIR Document'}
+                  </h2>
+                  <button type="button" onClick={resetDocumentForm} className="text-sm text-neutral-500 hover:text-neutral-900">
+                    Cancel
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">DOCUMENT NAME *</label>
+                    <input
+                      required
+                      value={documentName}
+                      onChange={e => setDocumentName(e.target.value)}
+                      placeholder="e.g. 2551Q Q1 2026 - Filed Copy"
+                      className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">DOCUMENT CATEGORY *</label>
+                    <select
+                      required
+                      value={documentCategory}
+                      onChange={e => setDocumentCategory(e.target.value)}
+                      className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm"
+                    >
+                      <option value="1701Q">BIR Form 1701Q – Quarterly Income Tax</option>
+                      <option value="1701A">BIR Form 1701A – Annual Income Tax</option>
+                      <option value="2551Q">BIR Form 2551Q – Percentage Tax</option>
+                      <option value="Payment Receipt">BIR Payment Receipt / Confirmation</option>
+                      <option value="Registration">BIR Registration / Certificate</option>
+                      <option value="Books and Invoices">Books of Accounts / Invoices</option>
+                      <option value="Other">Other Supporting Document</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">REPORTING PERIOD</label>
+                    <select
+                      value={documentPeriod}
+                      onChange={e => setDocumentPeriod(e.target.value)}
+                      className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm"
+                    >
+                      <option value="Q1">Quarter 1</option>
+                      <option value="Q2">Quarter 2</option>
+                      <option value="Q3">Quarter 3</option>
+                      <option value="Q4">Quarter 4</option>
+                      <option value="Annual">Annual</option>
+                      <option value="Payment">Payment</option>
+                      <option value="N/A">Not applicable</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">FILING STATUS</label>
+                    <select
+                      value={documentFilingStatus}
+                      onChange={e => setDocumentFilingStatus(e.target.value)}
+                      className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm"
+                    >
+                      <option value="Filed">Filed</option>
+                      <option value="Zero Filing">Zero Filing</option>
+                      <option value="Pending">Pending</option>
+                      <option value="Payment Record">Payment Record</option>
+                      <option value="Supporting Document">Supporting Document</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">DOCUMENT / FILING DATE</label>
+                    <input
+                      type="date"
+                      value={documentDate}
+                      onChange={e => setDocumentDate(e.target.value)}
+                      className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-600 mb-1">EXTERNAL DOCUMENT LINK *</label>
+                  <input
+                    type="url"
+                    required
+                    value={documentUrl}
+                    onChange={e => setDocumentUrl(e.target.value)}
+                    placeholder="https://drive.google.com/..."
+                    className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm"
+                  />
+                  <p className="text-xs text-neutral-500 mt-1">
+                    Use a share link that only the intended reviewer can access. Avoid public links containing sensitive information.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-600 mb-1">NOTES</label>
+                  <textarea
+                    rows={2}
+                    value={documentNotes}
+                    onChange={e => setDocumentNotes(e.target.value)}
+                    placeholder="e.g. Filed online; payment confirmation saved separately."
+                    className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm"
+                  />
+                </div>
+
+                {documentError && (
+                  <p className="text-sm text-red-600">{documentError}</p>
+                )}
+
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={resetDocumentForm} className="rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold">
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={documentSaving}
+                    className={`rounded-xl px-5 py-2 text-sm font-bold text-white ${t.accentBtn} disabled:opacity-50`}
+                  >
+                    {documentSaving ? 'Saving...' : editingDocumentId ? 'Update Record' : 'Save Document'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {documentsLoading ? (
+              <div className="py-12 text-center text-sm text-neutral-500">Loading your document records...</div>
+            ) : (
+              <div className="space-y-3">
+                {documents.filter(doc => doc.tax_year === selectedTaxYear).length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-neutral-300 py-12 text-center">
+                    <div className="text-4xl mb-3">🗂️</div>
+                    <p className="font-bold text-neutral-800">No documents for {selectedTaxYear || 'this year'} yet</p>
+                    <p className="text-sm text-neutral-500 mt-1">Add your filed returns, payment receipts, or supporting documents.</p>
+                  </div>
+                ) : (
+                  documents
+                    .filter(doc => doc.tax_year === selectedTaxYear)
+                    .map(doc => (
+                      <div key={doc.id} className="rounded-xl border border-neutral-200 bg-white p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <span className="text-xs font-bold rounded-full bg-amber-100 text-amber-800 px-2.5 py-1">{doc.category}</span>
+                            {doc.reporting_period && <span className="text-xs text-neutral-500">{doc.reporting_period}</span>}
+                            <span className="text-xs rounded-full bg-neutral-100 text-neutral-700 px-2.5 py-1">{doc.filing_status}</span>
+                          </div>
+                          <p className="font-bold text-neutral-900 break-words">{doc.document_name}</p>
+                          <p className="text-xs text-neutral-500 mt-1">
+                            {doc.document_date ? `Date: ${doc.document_date}` : 'Date not specified'}
+                          </p>
+                          {doc.notes && <p className="text-sm text-neutral-600 mt-2 whitespace-pre-wrap">{doc.notes}</p>}
+                        </div>
+                        <div className="flex flex-wrap gap-2 shrink-0">
+                          <a
+                            href={doc.document_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-bold text-white hover:bg-amber-700"
+                          >
+                            Open Document ↗
+                          </a>
+                          <button type="button" onClick={() => openEditDocumentForm(doc)} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-700">
+                            Edit
+                          </button>
+                          <button type="button" onClick={() => deleteDocument(doc.id)} className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600">
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                )}
+              </div>
+            )}
+          </div>
+          </>
         )}
 
         {activeTab === 'settings' && (
