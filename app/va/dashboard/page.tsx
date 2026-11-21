@@ -105,9 +105,12 @@ export default function VADashboard() {
   const [theme, setTheme] = useState('charcoal');
 const [calendarDate, setCalendarDate] = useState<Date | null>(null);
 const [activePeriod, setActivePeriod] = useState('month');
+const [currentCalendarYear, setCurrentCalendarYear] = useState<number | null>(null);
 
 useEffect(() => {
-  setCalendarDate(new Date());
+  const now = new Date();
+  setCalendarDate(now);
+  setCurrentCalendarYear(now.getFullYear());
 }, []);
 const handleToday = () => {
   setCalendarDate(new Date());
@@ -596,13 +599,10 @@ useEffect(() => {
 }, [activeTimer]);
 
 const monthlyRevenueData = chartReferenceDate
-  ? Array.from({ length: 6 }, (_, index) => {
-      const date = new Date(
-        chartReferenceDate.getFullYear(),
-        chartReferenceDate.getMonth(),
-        1
-      );
-      date.setMonth(date.getMonth() - (5 - index));
+  ? Array.from({ length: 12 }, (_, index) => {
+      // Always show all calendar months, January through December.
+      // Months without recorded income remain visible with a value of zero.
+      const date = new Date(chartReferenceDate.getFullYear(), index, 1);
 
       const monthKey = `${date.getFullYear()}-${String(
         date.getMonth() + 1
@@ -620,18 +620,15 @@ const monthlyRevenueData = chartReferenceDate
           0
         );
 
-      // Include manual BIR income entries so the chart reflects recorded income
-      // even when it was not generated through the time tracker.
+      // Include manual BIR income entries alongside billable time-tracker income.
       const manualIncome = birAdjustments
         .filter(item => item.income_date?.slice(0, 7) === monthKey)
         .reduce((total, item) => total + (Number(item.amount) || 0), 0);
 
-      const revenue = billableTimeIncome + manualIncome;
-
       return {
         month: date.toLocaleDateString('en-US', { month: 'short' }),
         monthKey,
-        revenue,
+        revenue: billableTimeIncome + manualIncome,
       };
     })
   : [];
@@ -640,9 +637,19 @@ const maxMonthlyRevenue = Math.max(
   ...monthlyRevenueData.map(item => item.revenue),
   1
 );
+// Revenue card: accumulate income for the current calendar year only.
+// This prevents previous tax years from being added to the current year's total.
+const currentCalendarYearString = currentCalendarYear === null
+  ? ''
+  : String(currentCalendarYear);
+
 const totalRecordedRevenue =
   timeEntries
-    .filter(entry => entry.is_billable)
+    .filter(
+      entry =>
+        entry.is_billable &&
+        entry.started_at?.slice(0, 4) === currentCalendarYearString
+    )
     .reduce(
       (total, entry) =>
         total +
@@ -650,12 +657,18 @@ const totalRecordedRevenue =
           (Number(entry.hourly_rate) || 0),
       0
     ) +
-  birAdjustments.reduce(
-    (total, item) => total + (Number(item.amount) || 0),
-    0
-  );
+  birAdjustments
+    .filter(item => item.income_date?.slice(0, 4) === currentCalendarYearString)
+    .reduce(
+      (total, item) => total + (Number(item.amount) || 0),
+      0
+    );
 
-const paidInvoiceCount = invoices.filter(invoice => invoice.status === 'paid').length;
+const paidInvoiceCount = invoices.filter(
+  invoice =>
+    invoice.status === 'paid' &&
+    invoice.issue_date?.slice(0, 4) === currentCalendarYearString
+).length;
 
 type ClientEarning = {
   client: string;
@@ -2534,7 +2547,7 @@ const calendarDays = [
     Monthly Earnings Overview
   </h3>
   <p className="text-sm text-neutral-500 mb-6">
-    Billable time-tracker earnings plus manual income over the last 6 months
+    Billable time-tracker earnings plus manual income, January–December
   </p>
 
   <div className="flex items-end justify-between gap-3 h-52">
