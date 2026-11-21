@@ -608,7 +608,7 @@ const monthlyRevenueData = chartReferenceDate
         date.getMonth() + 1
       ).padStart(2, '0')}`;
 
-      const revenue = timeEntries
+      const billableTimeIncome = timeEntries
         .filter(entry =>
           entry.started_at?.slice(0, 7) === monthKey && entry.is_billable
         )
@@ -620,8 +620,17 @@ const monthlyRevenueData = chartReferenceDate
           0
         );
 
+      // Include manual BIR income entries so the chart reflects recorded income
+      // even when it was not generated through the time tracker.
+      const manualIncome = birAdjustments
+        .filter(item => item.income_date?.slice(0, 7) === monthKey)
+        .reduce((total, item) => total + (Number(item.amount) || 0), 0);
+
+      const revenue = billableTimeIncome + manualIncome;
+
       return {
         month: date.toLocaleDateString('en-US', { month: 'short' }),
+        monthKey,
         revenue,
       };
     })
@@ -631,8 +640,30 @@ const maxMonthlyRevenue = Math.max(
   ...monthlyRevenueData.map(item => item.revenue),
   1
 );
+const totalRecordedRevenue =
+  timeEntries
+    .filter(entry => entry.is_billable)
+    .reduce(
+      (total, entry) =>
+        total +
+        ((Number(entry.duration_seconds) || 0) / 3600) *
+          (Number(entry.hourly_rate) || 0),
+      0
+    ) +
+  birAdjustments.reduce(
+    (total, item) => total + (Number(item.amount) || 0),
+    0
+  );
 
-const clientWiseEarnings = Object.values(
+const paidInvoiceCount = invoices.filter(invoice => invoice.status === 'paid').length;
+
+type ClientEarning = {
+  client: string;
+  totalSeconds: number;
+  totalEarnings: number;
+};
+
+const clientWiseEarnings: ClientEarning[] = Object.values(
   timeEntries.reduce((groups, entry) => {
     const client = entry.client_name?.trim() || 'Unassigned Client';
 
@@ -654,12 +685,10 @@ const clientWiseEarnings = Object.values(
     }
 
     return groups;
-  }, {} as Record<string, {
-    client: string;
-    totalSeconds: number;
-    totalEarnings: number;
-  }>)
-).sort((a, b) => b.totalEarnings - a.totalEarnings);
+  }, {} as Record<string, ClientEarning>)
+) as ClientEarning[];
+
+clientWiseEarnings.sort((a, b) => b.totalEarnings - a.totalEarnings);
 
 const totalClientEarnings = clientWiseEarnings.reduce(
   (total, item) => total + item.totalEarnings,
@@ -1364,17 +1393,35 @@ const calendarDays = [
               <div className={`${t.cardBg} p-5 rounded-2xl shadow-xs border ${t.cardBorder} relative`}><span className={`text-[10px] font-bold ${t.textMuted} tracking-wider`}>ACTIVE CLIENTS</span><p className="text-3xl font-black text-neutral-900 mt-3">0</p><p className="text-xs text-neutral-500 font-medium mt-1">Clients</p></div>
               <div className={`${t.cardBg} p-5 rounded-2xl shadow-xs border ${t.cardBorder}`}><span className={`text-[10px] font-bold ${t.textMuted} tracking-wider`}>TASKS DUE TODAY</span><p className="text-3xl font-black text-neutral-900 mt-3">0</p><p className="text-xs text-neutral-500 font-medium mt-1">Pending items</p></div>
               <div className={`${t.cardBg} p-5 rounded-2xl shadow-xs border ${t.cardBorder}`}><span className={`text-[10px] font-bold ${t.textMuted} tracking-wider`}>LOGGED HOURS</span><p className="text-3xl font-black text-neutral-900 mt-3">0.0</p><p className="text-xs text-neutral-500 font-medium mt-1">Hours</p></div>
-              <div className={`${t.cardBg} p-5 rounded-2xl shadow-xs border ${t.cardBorder}`}><span className={`text-[10px] font-bold ${t.textMuted} tracking-wider`}>REVENUE & INVOICES</span><p className={`text-2xl font-black ${t.currencyColor} mt-3`}>{formatPeso(
-  timeEntries.reduce(
-    (total, entry) =>
-      total +
-      (entry.is_billable
-        ? ((entry.duration_seconds || 0) / 3600) *
-          (Number(entry.hourly_rate) || 0)
-        : 0),
-    0
-  )
-)}</p><p className="text-xs text-neutral-500 font-medium mt-1">0 invoices paid</p></div>
+              <div className={`${t.cardBg} p-5 rounded-2xl shadow-xs border ${t.cardBorder}`}><span className={`text-[10px] font-bold ${t.textMuted} tracking-wider`}>REVENUE & INVOICES</span><p className={`text-2xl font-black ${t.currencyColor} mt-3`}>{formatPeso(totalRecordedRevenue)}</p><p className="text-xs text-neutral-500 font-medium mt-1">{paidInvoiceCount} paid invoice{paidInvoiceCount === 1 ? '' : 's'}</p></div>
+            </div>
+
+            {/* DASHBOARD MONTHLY INCOME CHART */}
+            <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder} mb-8`}>
+              <div className="mb-6">
+                <h2 className="text-lg font-black text-neutral-900">📈 Monthly Income Overview</h2>
+                <p className="text-sm text-neutral-500 mt-1">Billable time-tracker earnings plus manual reportable-income entries</p>
+              </div>
+              <div className="flex items-end justify-between gap-3 h-56">
+                {monthlyRevenueData.map((item) => (
+                  <div key={item.monthKey} className="flex-1 flex flex-col items-center justify-end h-full gap-2 min-w-0">
+                    <span className="text-[10px] sm:text-xs font-semibold text-neutral-700 whitespace-nowrap">
+                      {formatPeso(item.revenue)}
+                    </span>
+                    <div className="w-full flex items-end justify-center flex-1">
+                      <div
+                        title={`${item.month}: ${formatPeso(item.revenue)}`}
+                        className="w-full max-w-16 bg-orange-500 rounded-t-lg transition-all duration-300"
+                        style={{
+                          height: `${item.revenue > 0 ? Math.max((item.revenue / maxMonthlyRevenue) * 100, 5) : 0}%`,
+                          minHeight: item.revenue > 0 ? '6px' : '0',
+                        }}
+                      />
+                    </div>
+                    <span className="text-xs font-bold text-neutral-500">{item.month}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder} mb-8`}>
@@ -2454,21 +2501,30 @@ const calendarDays = [
           Total Monthly Revenue
         </h3>
         <p className={`text-3xl font-black ${t.currencyColor}`}>
-          {formatPeso(
-            timeEntries
-              .filter(entry =>
-                reportMonth &&
-                entry.started_at?.slice(0, 7) === reportMonth &&
-                entry.is_billable
-              )
-              .reduce(
-                (total, entry) =>
-                  total +
-                  ((Number(entry.duration_seconds) || 0) / 3600) *
-                  (Number(entry.hourly_rate) || 0),
-                0
-              )
-          )}
+       {formatPeso(
+  timeEntries
+    .filter(entry =>
+      reportMonth &&
+      entry.started_at?.slice(0, 7) === reportMonth &&
+      entry.is_billable
+    )
+    .reduce(
+      (total, entry) =>
+        total +
+        ((Number(entry.duration_seconds) || 0) / 3600) *
+        (Number(entry.hourly_rate) || 0),
+      0
+    ) +
+  birAdjustments
+    .filter(item =>
+      reportMonth &&
+      item.income_date?.slice(0, 7) === reportMonth
+    )
+    .reduce(
+      (total, item) => total + (Number(item.amount) || 0),
+      0
+    )
+)}
         </p>
       </div>
 
@@ -2478,7 +2534,7 @@ const calendarDays = [
     Monthly Earnings Overview
   </h3>
   <p className="text-sm text-neutral-500 mb-6">
-    Billable earnings over the last 6 months
+    Billable time-tracker earnings plus manual income over the last 6 months
   </p>
 
   <div className="flex items-end justify-between gap-3 h-52">
