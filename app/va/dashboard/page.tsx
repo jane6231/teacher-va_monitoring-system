@@ -15,6 +15,22 @@ type VATask = {
 };
 
 
+type VAClient = {
+  id: string;
+  user_id: string;
+  client_name: string;
+  email: string | null;
+  phone: string | null;
+  company: string | null;
+  notes: string | null;
+  status: 'active' | 'inactive';
+  hourly_rate: number;
+  currency_code: string;
+  created_at: string;
+  updated_at: string;
+};
+
+
 type VAProject = {
   id: string;
   user_id: string;
@@ -101,6 +117,7 @@ export default function VADashboard() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [workView, setWorkView] = useState<'tasks' | 'projects'>('tasks');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [theme, setTheme] = useState('charcoal');
 const [calendarDate, setCalendarDate] = useState<Date | null>(null);
@@ -158,6 +175,15 @@ const handleNextMonth = () => {
   const [dueDate, setDueDate] = useState('');
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
   const [taskStatus, setTaskStatus] = useState<'pending' | 'in_progress' | 'completed'>('pending');
+  const [clients, setClients] = useState<VAClient[]>([]);
+  const [clientsLoading, setClientsLoading] = useState(false);
+  const [clientError, setClientError] = useState('');
+  const [showAddClientForm, setShowAddClientForm] = useState(false);
+  const [newClientName, setNewClientName] = useState('');
+  const [newClientEmail, setNewClientEmail] = useState('');
+  const [newClientCompany, setNewClientCompany] = useState('');
+  const [newClientPhone, setNewClientPhone] = useState('');
+  const [savingClient, setSavingClient] = useState(false);
 
 const [projects, setProjects] = useState<VAProject[]>([]);
 const [projectsLoading, setProjectsLoading] = useState(false);
@@ -279,6 +305,27 @@ useEffect(() => {
     }
 
     setTasksLoading(false);
+  }
+
+  async function loadClients(userId: string) {
+    setClientsLoading(true);
+    setClientError('');
+
+    const { data, error } = await supabase
+      .from('va_clients')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .order('client_name', { ascending: true });
+
+    if (error) {
+      setClientError(error.message);
+      setClients([]);
+    } else {
+      setClients((data || []) as VAClient[]);
+    }
+
+    setClientsLoading(false);
   }
 
 async function loadProjects(userId: string) {
@@ -564,6 +611,7 @@ async function deleteDocument(documentId: string) {
       }
       setUser(user);
 await loadTasks(user.id);
+await loadClients(user.id);
 await loadTimeEntries(user.id);
 await loadProjects(user.id);
 await loadInvoices(user.id);
@@ -731,6 +779,15 @@ const totalClientEarnings = clientWiseEarnings.reduce(
   localStorage.setItem('teacher_dashboard_theme', newTheme);
 };
 
+  const resetNewClientForm = () => {
+    setNewClientName('');
+    setNewClientEmail('');
+    setNewClientCompany('');
+    setNewClientPhone('');
+    setClientError('');
+    setShowAddClientForm(false);
+  };
+
   const resetTaskForm = () => {
     setEditingTaskId(null);
     setTaskTitle('');
@@ -739,6 +796,7 @@ const totalClientEarnings = clientWiseEarnings.reduce(
     setDueDate('');
     setPriority('medium');
     setTaskStatus('pending');
+    resetNewClientForm();
     setShowTaskForm(false);
   };
 
@@ -756,6 +814,48 @@ const totalClientEarnings = clientWiseEarnings.reduce(
     setPriority(task.priority);
     setTaskStatus(task.status);
     setShowTaskForm(true);
+  };
+
+  const handleAddClient = async () => {
+    if (!user) return;
+
+    const trimmedName = newClientName.trim();
+    if (!trimmedName) {
+      setClientError('Please enter a client name.');
+      return;
+    }
+
+    setSavingClient(true);
+    setClientError('');
+
+    const { data, error } = await supabase
+      .from('va_clients')
+      .insert({
+        user_id: user.id,
+        client_name: trimmedName,
+        email: newClientEmail.trim() || null,
+        company: newClientCompany.trim() || null,
+        phone: newClientPhone.trim() || null,
+        status: 'active',
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      setClientError(error.message);
+      setSavingClient(false);
+      return;
+    }
+
+    setClients((current) =>
+      [...current, data as VAClient].sort((a, b) =>
+        a.client_name.localeCompare(b.client_name)
+      )
+    );
+    setClientName((data as VAClient).client_name);
+    setProjectClient((data as VAClient).client_name);
+    resetNewClientForm();
+    setSavingClient(false);
   };
 
   const handleSaveTask = async (event: FormEvent<HTMLFormElement>) => {
@@ -1307,9 +1407,8 @@ const calendarDays = [
 
           <nav className="space-y-1">
             <button onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'dashboard' ? t.navActive : t.navInactive}`}>📊 My Dashboard</button>
-            <button onClick={() => { setActiveTab('tasks'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'tasks' ? t.navActive : t.navInactive}`}>📋 Client Tasks</button>
+            <button onClick={() => { setActiveTab('work'); setWorkView('tasks'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'work' ? t.navActive : t.navInactive}`}>📋 Work Management</button>
             <button onClick={() => { setActiveTab('tracker'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'tracker' ? t.navActive : t.navInactive}`}>⏱️ Time Tracker</button>
-            <button onClick={() => { setActiveTab('projects'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'projects' ? t.navActive : t.navInactive}`}>📁 Projects</button>
             <button onClick={() => { setActiveTab('invoices'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'invoices' ? t.navActive : t.navInactive}`}>💳 Invoices & Billing</button>
             <button onClick={() => { setActiveTab('reports'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'reports' ? t.navActive : t.navInactive}`}>📈 Reports</button>
             <button onClick={() => { setActiveTab('documents'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'documents' ? t.navActive : t.navInactive}`}>🧾 BIR Tax Center</button>
@@ -1484,7 +1583,18 @@ const calendarDays = [
           </>
         )}
 
-        {activeTab === 'tasks' && (
+        {activeTab === 'work' && (
+          <div className="space-y-5">
+            <div className={`${t.cardBg} p-4 rounded-2xl shadow-xs border ${t.cardBorder}`}>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div><h1 className="text-xl font-black text-neutral-900">Work Management</h1><p className="text-sm text-neutral-500 mt-1">Manage your client tasks and projects in one place.</p></div>
+                <div className="inline-flex rounded-xl border border-neutral-200 bg-neutral-100 p-1">
+                  <button type="button" onClick={() => { setWorkView('tasks'); setShowProjectForm(false); }} className={`px-4 py-2 rounded-lg text-sm font-semibold ${workView === 'tasks' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500'}`}>📋 Tasks</button>
+                  <button type="button" onClick={() => { setWorkView('projects'); setShowTaskForm(false); }} className={`px-4 py-2 rounded-lg text-sm font-semibold ${workView === 'projects' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500'}`}>📁 Projects</button>
+                </div>
+              </div>
+            </div>
+            {workView === 'tasks' && (
           <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
               <div>
@@ -1525,13 +1635,93 @@ const calendarDays = [
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-neutral-600 mb-1">Client Name</label>
-                    <input
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <label className="block text-xs font-bold text-neutral-600">Client Name</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setClientError('');
+                          setShowAddClientForm((current) => !current);
+                        }}
+                        className="text-xs font-bold text-amber-700 hover:text-amber-800"
+                      >
+                        + Add Client
+                      </button>
+                    </div>
+                    <select
                       value={clientName}
                       onChange={(event) => setClientName(event.target.value)}
-                      placeholder="Client or company"
                       className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-500"
-                    />
+                    >
+                      <option value="">No client selected</option>
+                      {clientName && !clients.some((client) => client.client_name === clientName) && (
+                        <option value={clientName}>{clientName} (existing task)</option>
+                      )}
+                      {clients.map((client) => (
+                        <option key={client.id} value={client.client_name}>
+                          {client.company ? `${client.client_name} — ${client.company}` : client.client_name}
+                        </option>
+                      ))}
+                    </select>
+                    {clientsLoading && <p className="mt-1 text-xs text-neutral-500">Loading clients...</p>}
+                    {clientError && !showAddClientForm && (
+                      <p role="alert" className="mt-1 text-xs text-red-600">{clientError}</p>
+                    )}
+                    {showAddClientForm && (
+                      <div className="mt-3 space-y-3 rounded-xl border border-amber-200 bg-white p-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="text-sm font-bold text-neutral-900">Add New Client</h3>
+                          <button type="button" onClick={resetNewClientForm} className="text-xs font-medium text-neutral-500 hover:text-neutral-900">Close</button>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-neutral-600">Client Name *</label>
+                          <input
+                            required
+                            value={newClientName}
+                            onChange={(event) => setNewClientName(event.target.value)}
+                            placeholder="Enter client name"
+                            className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-neutral-600">Company (optional)</label>
+                            <input
+                              value={newClientCompany}
+                              onChange={(event) => setNewClientCompany(event.target.value)}
+                              placeholder="Company name"
+                              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-neutral-600">Email (optional)</label>
+                            <input
+                              type="email"
+                              value={newClientEmail}
+                              onChange={(event) => setNewClientEmail(event.target.value)}
+                              placeholder="client@example.com"
+                              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="mb-1 block text-xs font-semibold text-neutral-600">Phone (optional)</label>
+                            <input
+                              value={newClientPhone}
+                              onChange={(event) => setNewClientPhone(event.target.value)}
+                              placeholder="Phone number"
+                              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                            />
+                          </div>
+                        </div>
+                        {clientError && <p role="alert" className="text-xs text-red-600">{clientError}</p>}
+                        <div className="flex justify-end gap-2">
+                          <button type="button" onClick={resetNewClientForm} className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700">Cancel</button>
+                          <button type="button" onClick={handleAddClient} disabled={savingClient} className={`rounded-lg px-4 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-60 ${t.accentBtn}`}>
+                            {savingClient ? 'Saving...' : 'Save Client'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -1641,6 +1831,305 @@ const calendarDays = [
         )}
 
        
+            {workView === 'projects' && (
+  <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
+    <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
+      <div>
+        <h1 className="text-2xl font-black text-neutral-900">
+          📁 Projects & Retainers
+        </h1>
+        <p className="text-sm text-neutral-500 mt-1">
+          Manage ongoing client projects and retainers
+        </p>
+      </div>
+
+      <button
+        onClick={openNewProjectForm}
+        className={`px-4 py-2 ${t.accentBtn} rounded-xl text-sm font-bold`}
+      >
+        + New Project
+      </button>
+    </div>
+
+    {projectError && (
+      <div role="alert" className="mb-4 p-3 rounded-xl bg-red-50 text-red-700 text-sm">
+        {projectError}
+      </div>
+    )}
+
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div className="p-4 rounded-xl bg-neutral-50 border">
+        <p className="text-xs font-bold text-neutral-500">TOTAL PROJECTS</p>
+        <p className="text-2xl font-black mt-2">{projects.length}</p>
+      </div>
+
+      <div className="p-4 rounded-xl bg-neutral-50 border">
+        <p className="text-xs font-bold text-neutral-500">ACTIVE PROJECTS</p>
+        <p className="text-2xl font-black mt-2">
+          {projects.filter(p => p.status === 'active').length}
+        </p>
+      </div>
+
+      <div className="p-4 rounded-xl bg-neutral-50 border">
+        <p className="text-xs font-bold text-neutral-500">COMPLETED PROJECTS</p>
+        <p className="text-2xl font-black mt-2">
+          {projects.filter(p => p.status === 'completed').length}
+        </p>
+      </div>
+    </div>
+
+    {showProjectForm && (
+      <form
+        onSubmit={handleSaveProject}
+        className="mb-6 p-5 rounded-2xl border border-neutral-200 bg-neutral-50"
+      >
+        <div className="flex justify-between items-center mb-5">
+          <h2 className="text-lg font-bold text-neutral-900">
+            {editingProjectId ? 'Edit Project' : 'Create New Project'}
+          </h2>
+
+          <button
+            type="button"
+            onClick={resetProjectForm}
+            className="text-sm text-neutral-500 hover:text-neutral-900"
+          >
+            Cancel
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold text-neutral-600 mb-1">
+              Project Name *
+            </label>
+            <input
+              required
+              value={projectName}
+              onChange={e => setProjectName(e.target.value)}
+              placeholder="Enter project name"
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+            />
+          </div>
+
+          <div>
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <label className="block text-xs font-bold text-neutral-600">Client Name</label>
+              <button type="button" onClick={() => { setClientError(''); setShowAddClientForm(v => !v); }} className="text-xs font-bold text-amber-700 hover:text-amber-800">+ Add Client</button>
+            </div>
+            <select value={projectClient} onChange={e => setProjectClient(e.target.value)} className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm">
+              <option value="">No client selected</option>
+              {projectClient && !clients.some(client => client.client_name === projectClient) && <option value={projectClient}>{projectClient} (existing project)</option>}
+              {clients.map(client => <option key={client.id} value={client.client_name}>{client.company ? `${client.client_name} — ${client.company}` : client.client_name}</option>)}
+            </select>
+            {clientsLoading && <p className="mt-1 text-xs text-neutral-500">Loading clients...</p>}
+            {clientError && <p role="alert" className="mt-1 text-xs text-red-600">{clientError}</p>}
+            {showAddClientForm && <div className="mt-3 space-y-3 rounded-xl border border-amber-200 bg-white p-4">
+              <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-bold text-neutral-900">Add New Client</h3><button type="button" onClick={resetNewClientForm} className="text-xs text-neutral-500">Close</button></div>
+              <input required value={newClientName} onChange={e => setNewClientName(e.target.value)} placeholder="Client name *" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" />
+              <input type="email" value={newClientEmail} onChange={e => setNewClientEmail(e.target.value)} placeholder="Email (optional)" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" />
+              <input value={newClientCompany} onChange={e => setNewClientCompany(e.target.value)} placeholder="Company (optional)" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" />
+              <input value={newClientPhone} onChange={e => setNewClientPhone(e.target.value)} placeholder="Phone (optional)" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" />
+              <button type="button" disabled={savingClient} onClick={handleAddClient} className={`rounded-lg px-4 py-2 text-xs font-bold ${t.accentBtn}`}>{savingClient ? 'Saving...' : 'Save Client'}</button>
+            </div>}
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-neutral-600 mb-1">
+              Project Status
+            </label>
+            <select
+              value={projectStatus}
+              onChange={e => setProjectStatus(e.target.value as VAProject['status'])}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+            >
+              <option value="active">Active</option>
+              <option value="completed">Completed</option>
+              <option value="on_hold">On Hold</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-neutral-600 mb-1">
+              Start Date
+            </label>
+            <input
+              type="date"
+              value={projectStartDate}
+              onChange={e => setProjectStartDate(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-neutral-600 mb-1">
+              Deadline
+            </label>
+            <input
+              type="date"
+              value={projectDueDate}
+              onChange={e => setProjectDueDate(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-neutral-600 mb-1">
+              Project Budget / Retainer (₱)
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={retainerAmount}
+              onChange={e => setRetainerAmount(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-neutral-600 mb-1">
+              Billing Cycle
+            </label>
+            <select
+              value={billingCycle}
+              onChange={e => setBillingCycle(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+            >
+              <option value="one_time">One-Time</option>
+              <option value="weekly">Weekly</option>
+              <option value="biweekly">Biweekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold text-neutral-600 mb-1">
+              Project Description
+            </label>
+            <textarea
+              rows={3}
+              value={projectDescription}
+              onChange={e => setProjectDescription(e.target.value)}
+              placeholder="Describe the project and deliverables..."
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-5">
+          <button
+            type="button"
+            onClick={resetProjectForm}
+            className="px-4 py-2 rounded-xl border bg-white text-sm font-semibold"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="submit"
+            className={`px-5 py-2 rounded-xl ${t.accentBtn} text-sm font-bold`}
+          >
+            {editingProjectId ? 'Save Changes' : 'Save Project'}
+          </button>
+        </div>
+      </form>
+    )}
+
+    {projectsLoading ? (
+      <div className="p-10 text-center text-neutral-500">
+        Loading projects...
+      </div>
+    ) : projects.length === 0 ? (
+      <div className="p-12 text-center bg-neutral-50 border border-dashed border-neutral-200 rounded-xl">
+        <p className="text-4xl mb-3">📁</p>
+        <p className="font-semibold text-neutral-700">No projects yet</p>
+        <p className="text-sm text-neutral-500 mt-1">
+          Click New Project to add your first project.
+        </p>
+      </div>
+    ) : (
+      <div className="space-y-4">
+        {projects.map(project => (
+          <div
+            key={project.id}
+            className="p-5 rounded-xl border border-neutral-200 bg-white"
+          >
+            <div className="flex flex-col md:flex-row md:justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <h3 className="font-bold text-lg text-neutral-900">
+                    {project.project_name}
+                  </h3>
+
+                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                    project.status === 'completed'
+                      ? 'bg-green-100 text-green-700'
+                      : project.status === 'on_hold'
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {project.status === 'on_hold'
+                      ? 'On Hold'
+                      : project.status.charAt(0).toUpperCase() + project.status.slice(1)}
+                  </span>
+                </div>
+
+                {project.client_name && (
+                  <p className="text-sm text-neutral-600">
+                    👤 {project.client_name}
+                  </p>
+                )}
+
+                {project.description && (
+                  <p className="text-sm text-neutral-500 mt-2 whitespace-pre-wrap">
+                    {project.description}
+                  </p>
+                )}
+
+                <div className="flex flex-wrap gap-4 mt-3 text-xs text-neutral-500">
+                  {project.start_date && (
+                    <span>📅 Started: {new Date(`${project.start_date}T00:00:00`).toLocaleDateString()}</span>
+                  )}
+                  {project.due_date && (
+                    <span>🏁 Deadline: {new Date(`${project.due_date}T00:00:00`).toLocaleDateString()}</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="md:text-right">
+                <p className={`text-xl font-black ${t.currencyColor}`}>
+                  {formatPeso(project.retainer_amount)}
+                </p>
+                <p className="text-xs text-neutral-500 mb-3">
+                  {project.billing_cycle.replace('_', ' ')}
+                </p>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => openEditProjectForm(project)}
+                    className="px-3 py-2 rounded-lg border text-xs font-semibold hover:bg-neutral-50"
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteProject(project.id)}
+                    className="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-50"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
+          </div>
+        )}
+
 {activeTab === 'tracker' && (
   <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
@@ -1868,292 +2357,7 @@ const calendarDays = [
 
 
     
-{activeTab === 'projects' && (
-  <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
-    <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
-      <div>
-        <h1 className="text-2xl font-black text-neutral-900">
-          📁 Projects & Retainers
-        </h1>
-        <p className="text-sm text-neutral-500 mt-1">
-          Manage ongoing client projects and retainers
-        </p>
-      </div>
 
-      <button
-        onClick={openNewProjectForm}
-        className={`px-4 py-2 ${t.accentBtn} rounded-xl text-sm font-bold`}
-      >
-        + New Project
-      </button>
-    </div>
-
-    {projectError && (
-      <div role="alert" className="mb-4 p-3 rounded-xl bg-red-50 text-red-700 text-sm">
-        {projectError}
-      </div>
-    )}
-
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-      <div className="p-4 rounded-xl bg-neutral-50 border">
-        <p className="text-xs font-bold text-neutral-500">TOTAL PROJECTS</p>
-        <p className="text-2xl font-black mt-2">{projects.length}</p>
-      </div>
-
-      <div className="p-4 rounded-xl bg-neutral-50 border">
-        <p className="text-xs font-bold text-neutral-500">ACTIVE PROJECTS</p>
-        <p className="text-2xl font-black mt-2">
-          {projects.filter(p => p.status === 'active').length}
-        </p>
-      </div>
-
-      <div className="p-4 rounded-xl bg-neutral-50 border">
-        <p className="text-xs font-bold text-neutral-500">COMPLETED PROJECTS</p>
-        <p className="text-2xl font-black mt-2">
-          {projects.filter(p => p.status === 'completed').length}
-        </p>
-      </div>
-    </div>
-
-    {showProjectForm && (
-      <form
-        onSubmit={handleSaveProject}
-        className="mb-6 p-5 rounded-2xl border border-neutral-200 bg-neutral-50"
-      >
-        <div className="flex justify-between items-center mb-5">
-          <h2 className="text-lg font-bold text-neutral-900">
-            {editingProjectId ? 'Edit Project' : 'Create New Project'}
-          </h2>
-
-          <button
-            type="button"
-            onClick={resetProjectForm}
-            className="text-sm text-neutral-500 hover:text-neutral-900"
-          >
-            Cancel
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="md:col-span-2">
-            <label className="block text-xs font-bold text-neutral-600 mb-1">
-              Project Name *
-            </label>
-            <input
-              required
-              value={projectName}
-              onChange={e => setProjectName(e.target.value)}
-              placeholder="Enter project name"
-              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-neutral-600 mb-1">
-              Client Name
-            </label>
-            <input
-              value={projectClient}
-              onChange={e => setProjectClient(e.target.value)}
-              placeholder="Client or company"
-              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-neutral-600 mb-1">
-              Project Status
-            </label>
-            <select
-              value={projectStatus}
-              onChange={e => setProjectStatus(e.target.value as VAProject['status'])}
-              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
-            >
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
-              <option value="on_hold">On Hold</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-neutral-600 mb-1">
-              Start Date
-            </label>
-            <input
-              type="date"
-              value={projectStartDate}
-              onChange={e => setProjectStartDate(e.target.value)}
-              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-neutral-600 mb-1">
-              Deadline
-            </label>
-            <input
-              type="date"
-              value={projectDueDate}
-              onChange={e => setProjectDueDate(e.target.value)}
-              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-neutral-600 mb-1">
-              Project Budget / Retainer (₱)
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={retainerAmount}
-              onChange={e => setRetainerAmount(e.target.value)}
-              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-neutral-600 mb-1">
-              Billing Cycle
-            </label>
-            <select
-              value={billingCycle}
-              onChange={e => setBillingCycle(e.target.value)}
-              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
-            >
-              <option value="one_time">One-Time</option>
-              <option value="weekly">Weekly</option>
-              <option value="biweekly">Biweekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="block text-xs font-bold text-neutral-600 mb-1">
-              Project Description
-            </label>
-            <textarea
-              rows={3}
-              value={projectDescription}
-              onChange={e => setProjectDescription(e.target.value)}
-              placeholder="Describe the project and deliverables..."
-              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
-            />
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-2 mt-5">
-          <button
-            type="button"
-            onClick={resetProjectForm}
-            className="px-4 py-2 rounded-xl border bg-white text-sm font-semibold"
-          >
-            Cancel
-          </button>
-
-          <button
-            type="submit"
-            className={`px-5 py-2 rounded-xl ${t.accentBtn} text-sm font-bold`}
-          >
-            {editingProjectId ? 'Save Changes' : 'Save Project'}
-          </button>
-        </div>
-      </form>
-    )}
-
-    {projectsLoading ? (
-      <div className="p-10 text-center text-neutral-500">
-        Loading projects...
-      </div>
-    ) : projects.length === 0 ? (
-      <div className="p-12 text-center bg-neutral-50 border border-dashed border-neutral-200 rounded-xl">
-        <p className="text-4xl mb-3">📁</p>
-        <p className="font-semibold text-neutral-700">No projects yet</p>
-        <p className="text-sm text-neutral-500 mt-1">
-          Click New Project to add your first project.
-        </p>
-      </div>
-    ) : (
-      <div className="space-y-4">
-        {projects.map(project => (
-          <div
-            key={project.id}
-            className="p-5 rounded-xl border border-neutral-200 bg-white"
-          >
-            <div className="flex flex-col md:flex-row md:justify-between gap-4">
-              <div className="flex-1">
-                <div className="flex flex-wrap items-center gap-2 mb-2">
-                  <h3 className="font-bold text-lg text-neutral-900">
-                    {project.project_name}
-                  </h3>
-
-                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
-                    project.status === 'completed'
-                      ? 'bg-green-100 text-green-700'
-                      : project.status === 'on_hold'
-                      ? 'bg-amber-100 text-amber-700'
-                      : 'bg-blue-100 text-blue-700'
-                  }`}>
-                    {project.status === 'on_hold'
-                      ? 'On Hold'
-                      : project.status.charAt(0).toUpperCase() + project.status.slice(1)}
-                  </span>
-                </div>
-
-                {project.client_name && (
-                  <p className="text-sm text-neutral-600">
-                    👤 {project.client_name}
-                  </p>
-                )}
-
-                {project.description && (
-                  <p className="text-sm text-neutral-500 mt-2 whitespace-pre-wrap">
-                    {project.description}
-                  </p>
-                )}
-
-                <div className="flex flex-wrap gap-4 mt-3 text-xs text-neutral-500">
-                  {project.start_date && (
-                    <span>📅 Started: {new Date(`${project.start_date}T00:00:00`).toLocaleDateString()}</span>
-                  )}
-                  {project.due_date && (
-                    <span>🏁 Deadline: {new Date(`${project.due_date}T00:00:00`).toLocaleDateString()}</span>
-                  )}
-                </div>
-              </div>
-
-              <div className="md:text-right">
-                <p className={`text-xl font-black ${t.currencyColor}`}>
-                  {formatPeso(project.retainer_amount)}
-                </p>
-                <p className="text-xs text-neutral-500 mb-3">
-                  {project.billing_cycle.replace('_', ' ')}
-                </p>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => openEditProjectForm(project)}
-                    className="px-3 py-2 rounded-lg border text-xs font-semibold hover:bg-neutral-50"
-                  >
-                    Edit
-                  </button>
-
-                  <button
-                    onClick={() => handleDeleteProject(project.id)}
-                    className="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-50"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    )}
-  </div>
-)}
 
 
       
