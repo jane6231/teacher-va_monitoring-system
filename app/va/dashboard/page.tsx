@@ -100,6 +100,7 @@ export default function VADashboard() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [theme, setTheme] = useState('charcoal');
   const [tasks, setTasks] = useState<VATask[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
@@ -1096,10 +1097,18 @@ const handleSaveInvoice = async (
   ];
 
   return (
-    <div className={`flex min-h-screen ${t.bgMain} text-neutral-900 transition-colors duration-300`}>
-      {/* Sidebar */}
-      <aside className={`w-64 ${t.sidebar} flex flex-col justify-between p-6 shadow-md fixed h-full z-10 border-r`}>
+    <div className={`flex min-h-screen w-full max-w-full overflow-x-hidden ${t.bgMain} text-neutral-900 transition-colors duration-300`}>
+      {/* Mobile menu backdrop */}
+      {mobileMenuOpen && (
+        <button type="button" aria-label="Close navigation menu" onClick={() => setMobileMenuOpen(false)} className="fixed inset-0 z-30 bg-black/50 lg:hidden" />
+      )}
+
+      {/* Sidebar: permanent on desktop, slide-out menu on phones */}
+      <aside className={`w-72 max-w-[85vw] lg:w-64 ${t.sidebar} flex flex-col justify-between p-5 sm:p-6 shadow-md fixed inset-y-0 left-0 z-40 border-r overflow-y-auto transition-transform duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
         <div>
+          <div className="mb-4 flex justify-end lg:hidden">
+            <button type="button" onClick={() => setMobileMenuOpen(false)} aria-label="Close menu" className="rounded-lg px-3 py-2 text-xl hover:bg-white/10">✕</button>
+          </div>
           <div className={`flex items-center gap-3 mb-8 ${t.brandBox} p-3 rounded-xl border`}>
             <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-inner ${t.brandIcon}`}>
               {theme === 'charcoal' ? '💼' : theme === 'teal' ? '🚀' : theme === 'indigo' ? '⚡' : theme === 'pink' ? '🌸' : '🌈'}
@@ -1111,15 +1120,15 @@ const handleSaveInvoice = async (
           </div>
 
           <nav className="space-y-1">
-            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'dashboard' ? t.navActive : t.navInactive}`}>📊 My Dashboard</button>
-            <button onClick={() => setActiveTab('tasks')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'tasks' ? t.navActive : t.navInactive}`}>📋 Client Tasks</button>
-            <button onClick={() => setActiveTab('tracker')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'tracker' ? t.navActive : t.navInactive}`}>⏱️ Time Tracker</button>
-            <button onClick={() => setActiveTab('projects')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'projects' ? t.navActive : t.navInactive}`}>📁 Projects</button>
-            <button onClick={() => setActiveTab('invoices')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'invoices' ? t.navActive : t.navInactive}`}>💳 Invoices & Billing</button>
-            <button onClick={() => setActiveTab('reports')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'reports' ? t.navActive : t.navInactive}`}>📈 Reports</button>
-            <button onClick={() => setActiveTab('documents')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'documents' ? t.navActive : t.navInactive}`}>🧾 BIR Tax Center</button>
+            <button onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'dashboard' ? t.navActive : t.navInactive}`}>📊 My Dashboard</button>
+            <button onClick={() => { setActiveTab('tasks'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'tasks' ? t.navActive : t.navInactive}`}>📋 Client Tasks</button>
+            <button onClick={() => { setActiveTab('tracker'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'tracker' ? t.navActive : t.navInactive}`}>⏱️ Time Tracker</button>
+            <button onClick={() => { setActiveTab('projects'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'projects' ? t.navActive : t.navInactive}`}>📁 Projects</button>
+            <button onClick={() => { setActiveTab('invoices'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'invoices' ? t.navActive : t.navInactive}`}>💳 Invoices & Billing</button>
+            <button onClick={() => { setActiveTab('reports'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'reports' ? t.navActive : t.navInactive}`}>📈 Reports</button>
+            <button onClick={() => { setActiveTab('documents'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'documents' ? t.navActive : t.navInactive}`}>🧾 BIR Tax Center</button>
           <button
-  onClick={() => router.push('/teacher-dashboard')}
+  onClick={() => { setMobileMenuOpen(false); router.push('/teacher-dashboard'); }}
   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${t.navInactive}`}
 >
   🎓 Switch to Teacher Dashboard
@@ -1131,19 +1140,28 @@ const handleSaveInvoice = async (
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 ml-64 p-8">
+      <main className="min-w-0 w-full flex-1 ml-0 px-4 py-4 pb-8 sm:px-6 sm:py-6 lg:ml-64 lg:p-8 overflow-x-hidden">
+        {/* Compact phone header */}
+        <div className="sticky top-0 z-20 -mx-4 -mt-4 mb-5 flex items-center justify-between border-b border-neutral-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:-mx-6 sm:-mt-6 sm:px-6 lg:hidden">
+          <button type="button" onClick={() => setMobileMenuOpen(true)} aria-label="Open navigation menu" className="rounded-xl border border-neutral-200 px-3 py-2 text-lg text-neutral-800 shadow-sm">☰</button>
+          <div className="min-w-0 px-3 text-center">
+            <p className="truncate text-sm font-bold text-neutral-900">VA & Freelance</p>
+            <p className="text-[11px] text-neutral-500">Management System</p>
+          </div>
+          <button type="button" onClick={handleLogout} className="rounded-xl px-2 py-2 text-xs font-semibold text-neutral-600">Sign Out</button>
+        </div>
         {activeTab === 'dashboard' && (
           <>
             <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder} flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8`}>
               <div>
-                <h1 className="text-2xl font-black text-neutral-900 flex items-center gap-2">Virtual Assistant Dashboard 🚀</h1>
+                <h1 className="text-xl sm:text-2xl font-black text-neutral-900 flex items-center gap-2">Virtual Assistant Dashboard 🚀</h1>
                 <p className="text-sm text-neutral-500 mt-0.5">Manage your active client tasks, logged hours, and billing</p>
               </div>
-              <div className="flex items-center gap-2 bg-neutral-100/80 p-1.5 rounded-xl border border-neutral-200 text-sm font-medium">
-                <button className="px-3 py-1.5 rounded-lg text-neutral-600 hover:bg-white transition">Today</button>
-                <button className="px-3 py-1.5 rounded-lg text-neutral-600 hover:bg-white transition">This Week</button>
-                <button className={`px-3 py-1.5 rounded-lg text-white shadow-xs ${t.accentBtn}`}>This Month</button>
-                <button className="px-3 py-1.5 rounded-lg text-neutral-600 hover:bg-white transition">This Year</button>
+              <div className="flex w-full flex-wrap items-center gap-1.5 rounded-xl border border-neutral-200 bg-neutral-100/80 p-1.5 text-xs font-medium sm:w-auto sm:gap-2 sm:text-sm">
+                <button className="rounded-lg px-2.5 py-2 text-neutral-600 transition hover:bg-white sm:px-3 sm:py-1.5">Today</button>
+                <button className="rounded-lg px-2.5 py-2 text-neutral-600 transition hover:bg-white sm:px-3 sm:py-1.5">This Week</button>
+                <button className={`rounded-lg px-2.5 py-2 text-white shadow-xs sm:px-3 sm:py-1.5 ${t.accentBtn}`}>This Month</button>
+                <button className="rounded-lg px-2.5 py-2 text-neutral-600 transition hover:bg-white sm:px-3 sm:py-1.5">This Year</button>
               </div>
             </div>
 
@@ -1172,7 +1190,7 @@ const handleSaveInvoice = async (
             <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
               <h2 className="text-xl font-black text-neutral-900 mb-6">October 2026</h2>
               <div className={`grid grid-cols-7 text-center font-bold text-xs ${t.textMuted} py-3 border-b border-neutral-100`}><span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span></div>
-              <div className="grid grid-cols-7 gap-2 pt-4">
+              <div className="grid grid-cols-7 gap-1 sm:gap-2 pt-4">
                 {calendarDays.map((day, index) => (
                   <div key={index} className={`h-24 p-2 border rounded-xl flex flex-col justify-between ${day ? `${t.cardBorder}${t.cardBg} shadow-xs` : 'border-neutral-100 bg-neutral-50/40'}`}>
                     {day && <span className="text-xs font-bold text-neutral-700">{day}</span>}
