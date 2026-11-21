@@ -1199,6 +1199,14 @@ const handleDeleteInvoice = async (invoiceId: string) => {
             <button onClick={() => { setActiveTab('invoices'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'invoices' ? t.navActive : t.navInactive}`}>💳 Invoices & Billing</button>
             <button onClick={() => { setActiveTab('reports'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'reports' ? t.navActive : t.navInactive}`}>📈 Reports</button>
             <button onClick={() => { setActiveTab('documents'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'documents' ? t.navActive : t.navInactive}`}>🧾 BIR Tax Center</button>
+            <button
+  onClick={() => setActiveTab('settings')}
+  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${
+    activeTab === 'settings' ? t.navActive : t.navInactive
+  }`}
+>
+  ⚙️ Account Settings
+</button>
           <button
   onClick={() => { setMobileMenuOpen(false); router.push('/teacher-dashboard'); }}
   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${t.navInactive}`}
