@@ -656,7 +656,20 @@ export default function TeacherDashboard() {
       cardBorder: 'border-purple-100',
       textMuted: 'text-purple-700',
       currencyColor: 'text-pink-600',
-    }
+    },
+    monochrome: {
+  bgMain: 'bg-neutral-100',
+  sidebar: 'bg-black text-white border-neutral-800',
+  brandBox: 'bg-neutral-900 border-neutral-700',
+  brandIcon: 'bg-white text-black',
+  navActive: 'bg-white text-black shadow-md',
+  navInactive: 'text-neutral-300 hover:bg-neutral-800 hover:text-white',
+  accentBtn: 'bg-black hover:bg-neutral-800 text-white',
+  cardBg: 'bg-white',
+  cardBorder: 'border-neutral-300',
+  textMuted: 'text-neutral-600',
+  currencyColor: 'text-neutral-900',
+},
   };
 
   const t = themes[theme] || themes.pink;
@@ -668,7 +681,7 @@ export default function TeacherDashboard() {
         <div>
           <div className={`flex items-center gap-3 mb-8 ${t.brandBox} p-3 rounded-xl border`}>
             <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-inner ${t.brandIcon}`}>
-              {theme === 'teal' ? '🌿' : theme === 'charcoal' ? '💼' : theme === 'indigo' ? '🎓' : theme === 'pink' ? '🌸' : '🌈'}
+              {theme === 'monochrome' ? '◼' : theme === 'charcoal' ? '💼' : theme === 'teal' ? '🚀' : theme === 'indigo' ? '⚡' : theme === 'pink' ? '🌸' : '🌈'}
             </div>
             <div>
               <h2 className="font-bold text-sm tracking-wide text-white">Teacher Portal</h2>
@@ -1182,6 +1195,16 @@ export default function TeacherDashboard() {
                   <button onClick={() => handleThemeChange('indigo')} className={`p-3 rounded-xl border text-left font-medium text-sm transition ${theme === 'indigo' ? 'border-indigo-600 bg-indigo-50/50 text-neutral-900 ring-2 ring-indigo-600/20' : 'border-neutral-200 bg-white text-neutral-700'}`}>🎓 Ocean Indigo</button>
                   <button onClick={() => handleThemeChange('pink')} className={`p-3 rounded-xl border text-left font-medium text-sm transition ${theme === 'pink' ? 'border-[#FF2E7E] bg-pink-50/50 text-neutral-900 ring-2 ring-pink-600/20' : 'border-neutral-200 bg-white text-neutral-700'}`}>🌸 Vibrant Pink</button>
                   <button onClick={() => handleThemeChange('colorful')} className={`p-3 rounded-xl border text-left font-medium text-sm transition ${theme === 'colorful' ? 'border-purple-600 bg-purple-50/50 text-neutral-900 ring-2 ring-purple-600/20' : 'border-neutral-200 bg-white text-neutral-700'}`}>🌈 Colorful Gradient</button>
+                  <button
+  onClick={() => handleThemeChange('monochrome')}
+  className={`p-3 rounded-xl border text-left font-medium text-sm transition ${
+    theme === 'monochrome'
+      ? 'border-black bg-neutral-100 text-black ring-2 ring-black/20'
+      : 'border-neutral-200 bg-white text-neutral-700'
+  }`}
+>
+  ◼ Monochrome – Black & White
+</button>
                 </div>
               </div>
 
