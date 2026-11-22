@@ -128,6 +128,12 @@ export default function VADashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [workView, setWorkView] = useState<'tasks' | 'projects'>('tasks');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [expandedNavGroups, setExpandedNavGroups] = useState<Record<string, boolean>>({
+    overview: true,
+    work: false,
+    finance: false,
+    tax: false,
+  });
   const [theme, setTheme] = useState('charcoal');
 const [calendarDate, setCalendarDate] = useState<Date | null>(null);
 const [activePeriod, setActivePeriod] = useState('month');
@@ -1519,6 +1525,18 @@ const handleDeleteInvoice = async (invoiceId: string) => {
     router.push('/auth/sign-up');
   };
 
+useEffect(() => {
+  const activeGroup =
+    activeTab === 'dashboard' ? 'overview' :
+    activeTab === 'work' || activeTab === 'tracker' ? 'work' :
+    ['invoices', 'accounting', 'journal', 'ledger', 'trial-balance', 'financial-statements', 'reports'].includes(activeTab) ? 'finance' :
+    activeTab === 'documents' ? 'tax' : null;
+
+  if (activeGroup) {
+    setExpandedNavGroups((previous) => ({ ...previous, [activeGroup]: true }));
+  }
+}, [activeTab]);
+
   if (loading) {
     return <div className="flex justify-center items-center min-h-screen bg-neutral-100 text-neutral-800 font-medium">Loading VA portal...</div>;
   }
@@ -1653,32 +1671,60 @@ const calendarDays = [
             </div>
           </div>
 
-          <nav className="space-y-1">
-            <button onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'dashboard' ? t.navActive : t.navInactive}`}>📊 My Dashboard</button>
-            <button onClick={() => { setActiveTab('work'); setWorkView('tasks'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'work' ? t.navActive : t.navInactive}`}>📋 Work Management</button>
-            <button onClick={() => { setActiveTab('tracker'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'tracker' ? t.navActive : t.navInactive}`}>⏱️ Time Tracker</button>
-            <button onClick={() => { setActiveTab('invoices'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'invoices' ? t.navActive : t.navInactive}`}>💳 Invoices & Billing</button>
-            <button onClick={() => { setActiveTab('accounting'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'accounting' ? t.navActive : t.navInactive}`}>📚 Cash Book</button>
-            <button onClick={() => { setActiveTab('journal'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'journal' ? t.navActive : t.navInactive}`}>📖 General Journal</button>
-            <button onClick={() => { setActiveTab('ledger'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'ledger' ? t.navActive : t.navInactive}`}>📚 General Ledger</button>
-            <button onClick={() => { setActiveTab('trial-balance'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'trial-balance' ? t.navActive : t.navInactive}`}>⚖️ Trial Balance</button>
-            <button onClick={() => { setActiveTab('financial-statements'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'financial-statements' ? t.navActive : t.navInactive}`}>📑 Financial Statements</button>
-            <button onClick={() => { setActiveTab('reports'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'reports' ? t.navActive : t.navInactive}`}>📈 Reports</button>
-            <button onClick={() => { setActiveTab('documents'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'documents' ? t.navActive : t.navInactive}`}>🧾 BIR Tax Center</button>
-            <button
-  onClick={() => setActiveTab('settings')}
-  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${
-    activeTab === 'settings' ? t.navActive : t.navInactive
-  }`}
->
-  ⚙️ Account Settings
-</button>
-          <button
-  onClick={() => { setMobileMenuOpen(false); router.push('/teacher-dashboard'); }}
-  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${t.navInactive}`}
->
-  🎓 Switch to Teacher Dashboard
-</button>
+          <nav className="space-y-2">
+            {[
+              { id: 'overview', label: 'OVERVIEW', icon: '🏠', items: [{ id: 'dashboard', label: '📊 My Dashboard' }] },
+              { id: 'work', label: 'WORK MANAGEMENT', icon: '🗂️', items: [
+                { id: 'work', label: '📋 Work Management' },
+                { id: 'tracker', label: '⏱️ Time Tracker' },
+              ] },
+              { id: 'finance', label: 'ACCOUNTING & FINANCE', icon: '💼', items: [
+                { id: 'invoices', label: '💳 Invoices & Billing' },
+                { id: 'accounting', label: '📚 Cash Book' },
+                { id: 'journal', label: '📖 General Journal' },
+                { id: 'ledger', label: '📚 General Ledger' },
+                { id: 'trial-balance', label: '⚖️ Trial Balance' },
+                { id: 'financial-statements', label: '📑 Financial Statements' },
+                { id: 'reports', label: '📈 Reports' },
+              ] },
+              { id: 'tax', label: 'TAX & RECORDS', icon: '🧾', items: [{ id: 'documents', label: 'BIR Tax Center' }] },
+            ].map((group) => {
+              const groupIsActive = group.items.some((item) => item.id === activeTab);
+              const isExpanded = Boolean(expandedNavGroups[group.id]);
+              return (
+                <div key={group.id}>
+                  <button
+                    type="button"
+                    aria-expanded={isExpanded}
+                    onClick={() => setExpandedNavGroups((previous) => ({ ...previous, [group.id]: !previous[group.id] }))}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-[10px] font-bold tracking-widest transition ${groupIsActive ? 'bg-white/10 text-white' : 'text-current/65 hover:bg-white/10 hover:text-white'}`}
+                  >
+                    <span className="flex items-center gap-2"><span>{group.icon}</span><span>{group.label}</span></span>
+                    <span className="text-xs">{isExpanded ? '⌄' : '›'}</span>
+                  </button>
+                  {isExpanded && (
+                    <div className="mt-1 ml-2 space-y-1 border-l border-current/20 pl-2">
+                      {group.items.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            setActiveTab(item.id);
+                            if (item.id === 'work') setWorkView('tasks');
+                            setMobileMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium text-sm text-left transition ${activeTab === item.id ? t.navActive : t.navInactive}`}
+                        >{item.label}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <div className="border-t border-current/20 pt-2 mt-3 space-y-1">
+              <button type="button" onClick={() => { setActiveTab('settings'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'settings' ? t.navActive : t.navInactive}`}>⚙️ Account Settings</button>
+              <button type="button" onClick={() => { setMobileMenuOpen(false); router.push('/teacher-dashboard'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${t.navInactive}`}>🎓 Switch to Teacher Dashboard</button>
+            </div>
           </nav>
         </div>
 
