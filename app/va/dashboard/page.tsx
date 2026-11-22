@@ -342,6 +342,8 @@ useEffect(() => {
   const [journalNotesUrl, setJournalNotesUrl] = useState('');
   const [journalSaving, setJournalSaving] = useState(false);
   const [journalYear, setJournalYear] = useState(0);
+  const [statementBasis, setStatementBasis] = useState<'monthly' | 'annual'>('annual');
+  const [statementMonth, setStatementMonth] = useState(String(new Date().getMonth() + 1).padStart(2, '0'));
   useEffect(() => { setJournalYear(new Date().getFullYear()); setJournalDate(new Date().toISOString().slice(0, 10)); }, []);
 
   async function loadJournalEntries(userId: string) {
@@ -1648,6 +1650,9 @@ const calendarDays = [
             <button onClick={() => { setActiveTab('invoices'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'invoices' ? t.navActive : t.navInactive}`}>💳 Invoices & Billing</button>
             <button onClick={() => { setActiveTab('accounting'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'accounting' ? t.navActive : t.navInactive}`}>📚 Cash Book</button>
             <button onClick={() => { setActiveTab('journal'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'journal' ? t.navActive : t.navInactive}`}>📖 General Journal</button>
+            <button onClick={() => { setActiveTab('ledger'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'ledger' ? t.navActive : t.navInactive}`}>📚 General Ledger</button>
+            <button onClick={() => { setActiveTab('trial-balance'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'trial-balance' ? t.navActive : t.navInactive}`}>⚖️ Trial Balance</button>
+            <button onClick={() => { setActiveTab('financial-statements'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'financial-statements' ? t.navActive : t.navInactive}`}>📑 Financial Statements</button>
             <button onClick={() => { setActiveTab('reports'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'reports' ? t.navActive : t.navInactive}`}>📈 Reports</button>
             <button onClick={() => { setActiveTab('documents'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'documents' ? t.navActive : t.navInactive}`}>🧾 BIR Tax Center</button>
             <button
@@ -3295,6 +3300,275 @@ const calendarDays = [
         <p className="mt-3 text-xs text-neutral-600">Historical BIR income and Cash Book transactions are displayed as imported journal lines using the original transaction dates. Imported lines remain linked to their source records and are not saved again in the General Journal, preventing duplicate entries. Account classifications are provisional; review cash/bank accounts and expense categories before relying on these lines for formal accounting reports.</p>
       </div>
     )}
+  </div>
+)}
+
+
+{activeTab === 'ledger' && (
+  <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
+    <style jsx global>{`
+      @media print {
+        body * { visibility: hidden !important; }
+        #general-ledger-print, #general-ledger-print * { visibility: visible !important; }
+        #general-ledger-print { position: absolute; inset: 0; width: 100%; padding: 10mm; color: #000 !important; background: #fff !important; }
+        #general-ledger-print * { color: #000 !important; background: #fff !important; box-shadow: none !important; }
+        #general-ledger-print .no-print { display: none !important; }
+        #general-ledger-print table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+        #general-ledger-print th, #general-ledger-print td { border: 1px solid #000 !important; padding: 5px; }
+      }
+    `}</style>
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5 no-print">
+      <div>
+        <h1 className="text-2xl font-black text-neutral-900">📚 General Ledger</h1>
+        <p className="text-sm text-neutral-500">Transactions grouped by account, with running balances.</p>
+      </div>
+      <div className="flex gap-2">
+        <select value={journalYear} onChange={e => setJournalYear(Number(e.target.value))} className="rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm">
+          {Array.from({ length: Math.max(8, new Date().getFullYear() - 2025 + 1) }, (_, i) => new Date().getFullYear() - i).map(year => <option key={year} value={year}>{year}</option>)}
+          {!Array.from({ length: Math.max(8, new Date().getFullYear() - 2025 + 1) }, (_, i) => new Date().getFullYear() - i).includes(2025) && <option value={2025}>2025</option>}
+        </select>
+        <button type="button" onClick={() => window.print()} className={`rounded-xl px-4 py-2 text-sm font-bold ${t.accentBtn}`}>Print / Save PDF</button>
+      </div>
+    </div>
+    <div id="general-ledger-print">
+      <div className="hidden print:block text-center mb-5">
+        <h1 className="text-lg font-bold">GENERAL LEDGER</h1>
+        <p>Individual Professional / Self-Employed – Non-VAT | Calendar Year {journalYear}</p>
+      </div>
+      {(() => {
+        type LedgerLine = { id: string; date: string; description: string; account: string; debit: number; credit: number; ref: string; imported: boolean };
+        const lines: LedgerLine[] = [];
+        journalEntries.filter(e => e.entry_date.slice(0, 4) === String(journalYear)).forEach(e => {
+          lines.push({ id: `${e.id}-dr`, date: e.entry_date, description: e.description, account: e.debit_account, debit: Number(e.amount) || 0, credit: 0, ref: e.entry_number || '', imported: false });
+          lines.push({ id: `${e.id}-cr`, date: e.entry_date, description: e.description, account: e.credit_account, debit: 0, credit: Number(e.amount) || 0, ref: e.entry_number || '', imported: false });
+        });
+        birAdjustments.filter(e => e.income_date.slice(0, 4) === String(journalYear)).forEach(e => {
+          const amount = Number(e.amount) || 0;
+          lines.push({ id: `bir-${e.id}-dr`, date: e.income_date, description: e.description, account: 'Cash in Bank', debit: amount, credit: 0, ref: `BIR-${e.tax_year}`, imported: true });
+          lines.push({ id: `bir-${e.id}-cr`, date: e.income_date, description: e.description, account: 'Professional Fees Income', debit: 0, credit: amount, ref: `BIR-${e.tax_year}`, imported: true });
+        });
+        cashTransactions.filter(e => e.transaction_date.slice(0, 4) === String(journalYear)).forEach(e => {
+          const amount = Number(e.amount) || 0;
+          const cashAccount = e.payment_method?.toLowerCase() === 'cash' ? 'Cash on Hand' : 'Cash in Bank';
+          const expenseAccount = JOURNAL_ACCOUNTS.includes(e.category) ? e.category : 'Other Operating Expense';
+          const isReceipt = e.transaction_type === 'receipt';
+          const debitAccount = isReceipt ? cashAccount : expenseAccount;
+          const creditAccount = isReceipt ? 'Professional Fees Income' : cashAccount;
+          lines.push({ id: `cash-${e.id}-dr`, date: e.transaction_date, description: e.description, account: debitAccount, debit: amount, credit: 0, ref: e.reference_no || '', imported: true });
+          lines.push({ id: `cash-${e.id}-cr`, date: e.transaction_date, description: e.description, account: creditAccount, debit: 0, credit: amount, ref: e.reference_no || '', imported: true });
+        });
+        const accounts = Array.from(new Set([...JOURNAL_ACCOUNTS, ...lines.map(line => line.account)])).sort();
+        const money = (n: number) => formatPeso(Math.abs(n));
+        return accounts.map(account => {
+          const accountLines = lines.filter(line => line.account === account).sort((a, b) => a.date.localeCompare(b.date));
+          if (!accountLines.length) return null;
+          let debitBalance = 0;
+          let creditBalance = 0;
+          const normalDebit = ['Cash on Hand','Cash in Bank','Accounts Receivable','Computer and Equipment','Office Supplies Expense','Internet and Communications Expense','Utilities Expense','Transportation Expense','Software and Subscriptions Expense','Repairs and Maintenance Expense','Taxes and Licenses Expense','Bank Charges Expense','Depreciation Expense','Other Operating Expense','Owner\'s Drawings'].includes(account);
+          return <section key={account} className="mb-7 break-inside-avoid">
+            <h2 className="font-bold text-base border-b-2 border-black pb-1 mb-2">ACCOUNT: {account}</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[700px] text-sm">
+                <thead><tr><th>Date</th><th>Particulars</th><th>Ref.</th><th className="text-right">Debit (₱)</th><th className="text-right">Credit (₱)</th><th className="text-right">Balance (₱)</th></tr></thead>
+                <tbody>{accountLines.map(line => {
+                  debitBalance += line.debit;
+                  creditBalance += line.credit;
+                  const balance = normalDebit ? debitBalance - creditBalance : creditBalance - debitBalance;
+                  return <tr key={line.id}>
+                    <td className="whitespace-nowrap">{line.date}</td>
+                    <td>{line.description}{line.imported && <span className="block text-xs">Imported source record</span>}</td>
+                    <td>{line.ref || '—'}</td>
+                    <td className="text-right">{line.debit ? money(line.debit) : '—'}</td>
+                    <td className="text-right">{line.credit ? money(line.credit) : '—'}</td>
+                    <td className="text-right">{money(Math.abs(balance))} {balance < 0 ? (normalDebit ? 'Cr' : 'Dr') : (normalDebit ? 'Dr' : 'Cr')}</td>
+                  </tr>;
+                })}</tbody>
+                <tfoot><tr className="font-bold"><td colSpan={3}>ACCOUNT TOTAL</td><td className="text-right">{money(accountLines.reduce((sum, line) => sum + line.debit, 0))}</td><td className="text-right">{money(accountLines.reduce((sum, line) => sum + line.credit, 0))}</td><td className="text-right">{money(Math.abs(normalDebit ? debitBalance - creditBalance : creditBalance - debitBalance))}</td></tr></tfoot>
+              </table>
+            </div>
+          </section>;
+        });
+      })()}
+      <p className="mt-4 text-xs text-neutral-600">This ledger is generated from saved General Journal entries and linked historical source records. Imported cash and BIR records are shown for review and are not duplicated in the journal database. Verify account classifications and opening balances before relying on this report for formal financial statements or tax filings.</p>
+    </div>
+  </div>
+)}
+
+
+{activeTab === 'trial-balance' && (
+  <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
+    <style jsx global>{`
+      @media print {
+        body * { visibility: hidden !important; }
+        #trial-balance-print, #trial-balance-print * { visibility: visible !important; }
+        #trial-balance-print { position: absolute; inset: 0; width: 100%; padding: 10mm; color: #000 !important; background: #fff !important; }
+        #trial-balance-print * { color: #000 !important; background: #fff !important; box-shadow: none !important; }
+        #trial-balance-print .no-print { display: none !important; }
+        #trial-balance-print table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+        #trial-balance-print th, #trial-balance-print td { border: 1px solid #000 !important; padding: 6px; }
+      }
+    `}</style>
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5 no-print">
+      <div>
+        <h1 className="text-2xl font-black text-neutral-900">⚖️ Trial Balance</h1>
+        <p className="text-sm text-neutral-500">Summary of debit and credit balances by account.</p>
+      </div>
+      <div className="flex gap-2">
+        <select value={journalYear} onChange={e => setJournalYear(Number(e.target.value))} className="rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm">
+          {Array.from({ length: Math.max(8, new Date().getFullYear() - 2025 + 1) }, (_, i) => new Date().getFullYear() - i).map(year => <option key={year} value={year}>{year}</option>)}
+          {!Array.from({ length: Math.max(8, new Date().getFullYear() - 2025 + 1) }, (_, i) => new Date().getFullYear() - i).includes(2025) && <option value={2025}>2025</option>}
+        </select>
+        <button type="button" onClick={() => window.print()} className={`rounded-xl px-4 py-2 text-sm font-bold ${t.accentBtn}`}>Print / Save PDF</button>
+      </div>
+    </div>
+    <div id="trial-balance-print">
+      <div className="hidden print:block text-center mb-5">
+        <h1 className="text-lg font-bold">TRIAL BALANCE</h1>
+        <p>Individual Professional / Self-Employed – Non-VAT</p>
+        <p>For the year ended December 31, {journalYear}</p>
+      </div>
+      {(() => {
+        type TBLine = { date: string; account: string; debit: number; credit: number };
+        const lines: TBLine[] = [];
+        journalEntries.filter(e => e.entry_date.slice(0, 4) === String(journalYear)).forEach(e => {
+          const amount = Number(e.amount) || 0;
+          lines.push({ date: e.entry_date, account: e.debit_account, debit: amount, credit: 0 });
+          lines.push({ date: e.entry_date, account: e.credit_account, debit: 0, credit: amount });
+        });
+        birAdjustments.filter(e => e.income_date.slice(0, 4) === String(journalYear)).forEach(e => {
+          const amount = Number(e.amount) || 0;
+          lines.push({ date: e.income_date, account: 'Cash in Bank', debit: amount, credit: 0 });
+          lines.push({ date: e.income_date, account: 'Professional Fees Income', debit: 0, credit: amount });
+        });
+        cashTransactions.filter(e => e.transaction_date.slice(0, 4) === String(journalYear)).forEach(e => {
+          const amount = Number(e.amount) || 0;
+          const cashAccount = e.payment_method?.toLowerCase() === 'cash' ? 'Cash on Hand' : 'Cash in Bank';
+          const expenseAccount = JOURNAL_ACCOUNTS.includes(e.category) ? e.category : 'Other Operating Expense';
+          const isReceipt = e.transaction_type === 'receipt';
+          lines.push({ date: e.transaction_date, account: isReceipt ? cashAccount : expenseAccount, debit: amount, credit: 0 });
+          lines.push({ date: e.transaction_date, account: isReceipt ? 'Professional Fees Income' : cashAccount, debit: 0, credit: amount });
+        });
+        const normalDebitAccounts = ['Cash on Hand','Cash in Bank','Accounts Receivable','Computer and Equipment','Office Supplies Expense','Internet and Communications Expense','Utilities Expense','Transportation Expense','Software and Subscriptions Expense','Repairs and Maintenance Expense','Taxes and Licenses Expense','Bank Charges Expense','Depreciation Expense','Other Operating Expense',"Owner's Drawings"];
+        const accountNames = Array.from(new Set([...JOURNAL_ACCOUNTS, ...lines.map(line => line.account)])).sort();
+        const rows = accountNames.map(account => {
+          const debitTotal = lines.filter(line => line.account === account).reduce((sum, line) => sum + line.debit, 0);
+          const creditTotal = lines.filter(line => line.account === account).reduce((sum, line) => sum + line.credit, 0);
+          const net = debitTotal - creditTotal;
+          const debitBalance = normalDebitAccounts.includes(account) ? Math.max(net, 0) : Math.max(-net, 0);
+          const creditBalance = normalDebitAccounts.includes(account) ? Math.max(-net, 0) : Math.max(net, 0);
+          return { account, debitBalance, creditBalance };
+        }).filter(row => row.debitBalance > 0.000001 || row.creditBalance > 0.000001);
+        const totalDebit = rows.reduce((sum, row) => sum + row.debitBalance, 0);
+        const totalCredit = rows.reduce((sum, row) => sum + row.creditBalance, 0);
+        const balanced = Math.abs(totalDebit - totalCredit) < 0.01;
+        return <>
+          <div className="mb-4 text-center">
+            <h2 className="font-bold text-lg">TRIAL BALANCE</h2>
+            <p className="text-sm">As of December 31, {journalYear}</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[650px] text-sm border-collapse">
+              <thead><tr className="border-y-2 border-black"><th className="p-3 text-left">Account Title</th><th className="p-3 text-right">Debit (₱)</th><th className="p-3 text-right">Credit (₱)</th></tr></thead>
+              <tbody>{rows.length === 0 ? <tr><td colSpan={3} className="p-8 text-center">No posted transactions for {journalYear}.</td></tr> : rows.map(row => <tr key={row.account} className="border-b border-neutral-300"><td className="p-3">{row.account}</td><td className="p-3 text-right">{row.debitBalance ? formatPeso(row.debitBalance) : '—'}</td><td className="p-3 text-right">{row.creditBalance ? formatPeso(row.creditBalance) : '—'}</td></tr>)}</tbody>
+              <tfoot><tr className="border-y-2 border-black font-black"><td className="p-3">TOTAL</td><td className="p-3 text-right">{formatPeso(totalDebit)}</td><td className="p-3 text-right">{formatPeso(totalCredit)}</td></tr></tfoot>
+            </table>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+            <p className="font-semibold">Difference: {formatPeso(Math.abs(totalDebit - totalCredit))}</p>
+            <p className={`font-bold ${balanced ? 'text-green-700' : 'text-red-700'}`}>{balanced ? 'Debits and credits are balanced' : 'Out of balance — review source entries'}</p>
+          </div>
+        </>;
+      })()}
+      <p className="mt-4 text-xs text-neutral-600">This is a preliminary, system-generated trial balance based on saved General Journal entries and imported BIR/Cash Book records. Review source overlap, account classifications, opening balances, and adjustments before relying on it for formal reporting. A balanced trial balance does not by itself establish that all entries are complete or correct.</p>
+    </div>
+  </div>
+)}
+
+
+{activeTab === 'financial-statements' && (
+  <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
+    <style jsx global>{`
+      @page { size: A4 portrait; margin: 15mm; }
+      @media print {
+        body * { visibility: hidden !important; }
+        #financial-statements-print, #financial-statements-print * { visibility: visible !important; }
+        #financial-statements-print { position: absolute; inset: 0; width: 100%; padding: 0; color: #000 !important; background: #fff !important; font-family: "Times New Roman", Times, serif !important; font-size: 10pt; }
+        #financial-statements-print * { color: #000 !important; background: #fff !important; box-shadow: none !important; }
+        #financial-statements-print .no-print { display: none !important; }
+        #financial-statements-print table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+        #financial-statements-print th, #financial-statements-print td { border-bottom: 1px solid #777; padding: 5px 7px; }
+        #financial-statements-print .statement-total { border-top: 1px solid #000; border-bottom: 2px double #000; font-weight: bold; }
+        /* Keep each formal financial statement on its own printed page. */
+        #financial-statements-print section {
+          break-inside: avoid !important;
+          page-break-inside: avoid !important;
+        }
+        #financial-statements-print section + section {
+          break-before: page !important;
+          page-break-before: always !important;
+        }
+        #financial-statements-print footer {
+          break-inside: avoid !important;
+          page-break-inside: avoid !important;
+        }
+      }
+    `}</style>
+    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6 no-print">
+      <div>
+        <h1 className="text-2xl font-black text-neutral-900">📑 Monthly and Annual Financial Statements</h1>
+        <p className="text-sm text-neutral-500">Management reports generated from journal entries and linked cash-book records.</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <select value={statementBasis} onChange={e => setStatementBasis(e.target.value as 'monthly' | 'annual')} className="rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm">
+          <option value="monthly">Monthly</option><option value="annual">Annual</option>
+        </select>
+        <select value={journalYear} onChange={e => setJournalYear(Number(e.target.value))} className="rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm">
+          {Array.from({ length: Math.max(8, new Date().getFullYear() - 2025 + 1) }, (_, i) => new Date().getFullYear() - i).map(year => <option key={year} value={year}>{year}</option>)}
+          {!Array.from({ length: Math.max(8, new Date().getFullYear() - 2025 + 1) }, (_, i) => new Date().getFullYear() - i).includes(2025) && <option value={2025}>2025</option>}
+        </select>
+        {statementBasis === 'monthly' && <select value={statementMonth} onChange={e => setStatementMonth(e.target.value)} className="rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm">{Array.from({length:12},(_,i)=>{const m=String(i+1).padStart(2,'0');return <option key={m} value={m}>{new Date(2000,i,1).toLocaleString('en-US',{month:'long'})}</option>})}</select>}
+        <button type="button" onClick={() => window.print()} className={`rounded-xl px-4 py-2 text-sm font-bold ${t.accentBtn}`}>Print / Save PDF</button>
+      </div>
+    </div>
+    <div id="financial-statements-print" className="bg-white text-black">
+      {(() => {
+        type StatementLine = { date:string; account:string; debit:number; credit:number; source:string };
+        const allLines: StatementLine[] = [];
+        journalEntries.forEach(e => { const a=Number(e.amount)||0; allLines.push({date:e.entry_date,account:e.debit_account,debit:a,credit:0,source:'General Journal'},{date:e.entry_date,account:e.credit_account,debit:0,credit:a,source:'General Journal'}); });
+        birAdjustments.forEach(e => { const a=Number(e.amount)||0; allLines.push({date:e.income_date,account:'Cash in Bank',debit:a,credit:0,source:'BIR income record'},{date:e.income_date,account:'Professional Fees Income',debit:0,credit:a,source:'BIR income record'}); });
+        cashTransactions.forEach(e => { const a=Number(e.amount)||0; const cash=e.payment_method?.toLowerCase()==='cash'?'Cash on Hand':'Cash in Bank'; const exp=JOURNAL_ACCOUNTS.includes(e.category)?e.category:'Other Operating Expense'; const receipt=e.transaction_type==='receipt'; allLines.push({date:e.transaction_date,account:receipt?cash:exp,debit:a,credit:0,source:'Cash Book'},{date:e.transaction_date,account:receipt?'Professional Fees Income':cash,debit:0,credit:a,source:'Cash Book'}); });
+        const inPeriod=(date:string)=>date?.slice(0,4)===String(journalYear) && (statementBasis==='annual' || date?.slice(5,7)===statementMonth);
+        const lines=allLines.filter(x=>inPeriod(x.date));
+        const debitNormal=['Cash on Hand','Cash in Bank','Accounts Receivable','Computer and Equipment','Office Supplies Expense','Internet and Communications Expense','Utilities Expense','Transportation Expense','Software and Subscriptions Expense','Repairs and Maintenance Expense','Taxes and Licenses Expense','Bank Charges Expense','Depreciation Expense','Other Operating Expense',"Owner's Drawings"];
+        const accountNames=Array.from(new Set([...JOURNAL_ACCOUNTS,...lines.map(x=>x.account)]));
+        const balances=accountNames.map(account=>{const dr=lines.filter(x=>x.account===account).reduce((v,x)=>v+x.debit,0);const cr=lines.filter(x=>x.account===account).reduce((v,x)=>v+x.credit,0);return {account,dr,cr,net:dr-cr};});
+        const amount=(account:string)=>{const x=balances.find(b=>b.account===account);return x?x.net:0;};
+        const incomeAccounts=balances.filter(x=>x.account.toLowerCase().includes('income')).map(x=>({name:x.account,value:-x.net}));
+        const expenseAccounts=balances.filter(x=>x.account.toLowerCase().includes('expense')).map(x=>({name:x.account,value:x.net}));
+        const totalIncome=incomeAccounts.reduce((v,x)=>v+x.value,0); const totalExpenses=expenseAccounts.reduce((v,x)=>v+x.value,0); const netIncome=totalIncome-totalExpenses;
+        const assetAccounts=['Cash on Hand','Cash in Bank','Accounts Receivable','Computer and Equipment'];
+        const liabilityAccounts=['Accounts Payable'];
+        const equityAccounts=["Owner's Capital","Owner's Drawings"];
+        const assets=assetAccounts.map(name=>({name,value:amount(name)})).filter(x=>Math.abs(x.value)>0.000001);
+        const liabilities=liabilityAccounts.map(name=>({name,value:-amount(name)})).filter(x=>Math.abs(x.value)>0.000001);
+        const equity=equityAccounts.map(name=>({name,value:-amount(name)})).filter(x=>Math.abs(x.value)>0.000001);
+        const totalAssets=assets.reduce((v,x)=>v+x.value,0); const totalLiabilities=liabilities.reduce((v,x)=>v+x.value,0); const totalEquity=equity.reduce((v,x)=>v+x.value,0)+netIncome;
+        const cashLines=lines.filter(x=>['Cash on Hand','Cash in Bank'].includes(x.account)); const netCashMovement=cashLines.reduce((v,x)=>v+x.debit-x.credit,0);
+        const periodLabel=statementBasis==='annual'?`For the year ended December 31, ${journalYear}`:`For the month ended ${new Date(Number(journalYear),Number(statementMonth),0).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`;
+        const fmt=(v:number)=>`${v<0?'(':''}₱${formatPeso(Math.abs(v))}${v<0?')':''}`;
+        const row=(name:string,value:number)=><tr key={name}><td>{name}</td><td className="text-right">{fmt(value)}</td></tr>;
+        return <>
+          <header className="text-center mb-7"><h2 className="font-bold text-lg tracking-wide">FINANCIAL STATEMENTS</h2><p className="font-semibold">Individual Professional / Self-Employed – Non-VAT</p><p className="text-sm">{periodLabel}</p><p className="text-xs mt-1">Currency: Philippine Peso (₱)</p></header>
+          <section className="mb-8"><h3 className="text-center font-bold mb-1">STATEMENT OF COMPREHENSIVE INCOME</h3><p className="text-center text-xs mb-3">{periodLabel}</p><table><thead><tr><th className="text-left">Particulars</th><th className="text-right">Amount (₱)</th></tr></thead><tbody><tr><td colSpan={2} className="font-bold">Income</td></tr>{incomeAccounts.map(x=>row(x.name,x.value))}<tr className="statement-total"><td>Total Income</td><td className="text-right">{fmt(totalIncome)}</td></tr><tr><td colSpan={2} className="font-bold pt-3">Expenses</td></tr>{expenseAccounts.map(x=>row(x.name,x.value))}<tr className="statement-total"><td>Total Expenses</td><td className="text-right">{fmt(totalExpenses)}</td></tr><tr className="statement-total"><td>NET INCOME / (LOSS)</td><td className="text-right">{fmt(netIncome)}</td></tr></tbody></table></section>
+          <section className="mb-8"><h3 className="text-center font-bold mb-1">STATEMENT OF FINANCIAL POSITION</h3><p className="text-center text-xs mb-3">As of {statementBasis==='annual'?`December 31, ${journalYear}`:new Date(Number(journalYear),Number(statementMonth),0).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</p><table><thead><tr><th className="text-left">Particulars</th><th className="text-right">Amount (₱)</th></tr></thead><tbody><tr><td colSpan={2} className="font-bold">Assets</td></tr>{assets.map(x=>row(x.name,x.value))}<tr className="statement-total"><td>Total Assets</td><td className="text-right">{fmt(totalAssets)}</td></tr><tr><td colSpan={2} className="font-bold pt-3">Liabilities</td></tr>{liabilities.map(x=>row(x.name,x.value))}<tr className="statement-total"><td>Total Liabilities</td><td className="text-right">{fmt(totalLiabilities)}</td></tr><tr><td colSpan={2} className="font-bold pt-3">Owner's Equity</td></tr>{equity.map(x=>row(x.name,x.value))}{row('Current Period Net Income / (Loss)',netIncome)}<tr className="statement-total"><td>Total Liabilities and Equity</td><td className="text-right">{fmt(totalLiabilities+totalEquity)}</td></tr></tbody></table><p className="text-xs mt-2">Position check (assets less liabilities and equity): {fmt(totalAssets-totalLiabilities-totalEquity)}. A non-zero difference indicates missing opening balances, incomplete classifications, or unrecorded transactions.</p></section>
+          <section className="mb-8"><h3 className="text-center font-bold mb-1">STATEMENT OF CASH FLOWS (SUMMARY)</h3><p className="text-center text-xs mb-3">{periodLabel}</p><table><thead><tr><th className="text-left">Particulars</th><th className="text-right">Amount (₱)</th></tr></thead><tbody>{row('Net cash movement from recorded cash accounts',netCashMovement)}{row('Cash receipts recorded',cashLines.reduce((v,x)=>v+x.debit,0))}{row('Cash disbursements recorded',cashLines.reduce((v,x)=>v+x.credit,0))}</tbody></table></section>
+          <section className="mb-8"><h3 className="text-center font-bold mb-1">STATEMENT OF CHANGES IN OWNER'S EQUITY (SUMMARY)</h3><p className="text-center text-xs mb-3">{periodLabel}</p><table><thead><tr><th className="text-left">Particulars</th><th className="text-right">Amount (₱)</th></tr></thead><tbody>{row('Recorded owner contributions',-amount("Owner's Capital"))}{row('Add: Net income / (loss)',netIncome)}{row('Less: Owner withdrawals',amount("Owner's Drawings"))}<tr className="statement-total"><td>Net change in owner's equity (summary)</td><td className="text-right">{fmt(-amount("Owner's Capital")+netIncome-amount("Owner's Drawings"))}</td></tr></tbody></table></section>
+          <section className="mb-5"><h3 className="font-bold mb-2">NOTES TO THE FINANCIAL REPORTS</h3><ol className="list-decimal pl-5 text-xs space-y-1"><li>These are preliminary internal management reports generated from saved General Journal entries and linked BIR/Cash Book records for the selected period.</li><li>Historical source records may overlap. Confirm that each receipt or disbursement is represented only once before relying on totals.</li><li>Opening balances, depreciation, liabilities, owner contributions/withdrawals, and non-cash adjustments must be entered and reconciled where applicable.</li><li>These reports are not represented as PFRS-compliant financial statements or BIR-registered books. Confirm the applicable reporting framework and required disclosures with a Philippine CPA.</li></ol></section>
+          <footer className="grid grid-cols-2 gap-12 text-xs mt-10"><div className="border-t border-black pt-2">Prepared by</div><div className="border-t border-black pt-2">Reviewed by</div></footer>
+          <p className="text-xs mt-5 text-center">Generated from the VA & Freelance Management System · For internal review</p>
+        </>;
+      })()}
+    </div>
   </div>
 )}
 
