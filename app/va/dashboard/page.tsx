@@ -343,8 +343,18 @@ useEffect(() => {
   const [journalSaving, setJournalSaving] = useState(false);
   const [journalYear, setJournalYear] = useState(0);
   const [statementBasis, setStatementBasis] = useState<'monthly' | 'annual'>('annual');
-  const [statementMonth, setStatementMonth] = useState(String(new Date().getMonth() + 1).padStart(2, '0'));
-  useEffect(() => { setJournalYear(new Date().getFullYear()); setJournalDate(new Date().toISOString().slice(0, 10)); }, []);
+  const [statementMonth, setStatementMonth] = useState("01");
+  useEffect(() => {
+  const now = new Date();
+
+  setJournalYear(now.getFullYear());
+  setJournalDate(
+    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
+  );
+  setStatementMonth(
+    String(now.getMonth() + 1).padStart(2, "0")
+  );
+}, []);
 
   async function loadJournalEntries(userId: string) {
     setJournalLoading(true);
