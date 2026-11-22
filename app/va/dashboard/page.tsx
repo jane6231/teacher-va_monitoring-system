@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { Fragment, useState, useEffect, useRef, type FormEvent } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 
@@ -87,6 +87,14 @@ type VABIRAdjustment = {
   source: string | null;
   document_url: string | null;
   created_at: string;
+};
+
+type VACashTransaction = {
+  id: string; user_id: string; transaction_date: string;
+  transaction_type: 'receipt' | 'disbursement'; description: string;
+  counterparty: string | null; category: string; amount: number;
+  payment_method: string | null; reference_no: string | null;
+  notes_url: string | null; created_at: string; updated_at: string;
 };
 
 type VADocument = {
@@ -286,6 +294,134 @@ useEffect(() => {
   setChartReferenceDate(new Date());
 }, []);
 
+
+  const [cashTransactions, setCashTransactions] = useState<VACashTransaction[]>([]);
+  const [cashTransactionsLoading, setCashTransactionsLoading] = useState(false);
+  const [cashTransactionError, setCashTransactionError] = useState('');
+  const [showCashTransactionForm, setShowCashTransactionForm] = useState(false);
+  const [editingCashTransactionId, setEditingCashTransactionId] = useState<string | null>(null);
+  const [cashTransactionDate, setCashTransactionDate] = useState('');
+  const [cashTransactionType, setCashTransactionType] = useState<'receipt' | 'disbursement'>('receipt');
+  const [cashTransactionDescription, setCashTransactionDescription] = useState('');
+  const [cashTransactionCounterparty, setCashTransactionCounterparty] = useState('');
+  const [cashTransactionCategory, setCashTransactionCategory] = useState('Professional fees');
+  const [cashTransactionAmount, setCashTransactionAmount] = useState('');
+  const [cashTransactionPaymentMethod, setCashTransactionPaymentMethod] = useState('Bank transfer');
+  const [cashTransactionReference, setCashTransactionReference] = useState('');
+  const [cashTransactionNotesUrl, setCashTransactionNotesUrl] = useState('');
+  const [cashTransactionSaving, setCashTransactionSaving] = useState(false);
+  const [cashRegisterYear, setCashRegisterYear] = useState(0);
+  useEffect(() => { setCashRegisterYear(new Date().getFullYear()); }, []);
+
+
+  type VAGeneralJournalEntry = {
+    id: string; user_id: string; entry_date: string; entry_number: string | null;
+    description: string; debit_account: string; credit_account: string;
+    amount: number; notes_url: string | null; created_at: string;
+  };
+  const JOURNAL_ACCOUNTS = [
+    'Cash on Hand', 'Cash in Bank', 'Accounts Receivable', 'Computer and Equipment',
+    'Accumulated Depreciation', 'Accounts Payable', 'Owner\'s Capital', 'Owner\'s Drawings',
+    'Professional Fees Income', 'Other Business Income', 'Office Supplies Expense',
+    'Internet and Communications Expense', 'Utilities Expense', 'Transportation Expense',
+    'Software and Subscriptions Expense', 'Repairs and Maintenance Expense',
+    'Taxes and Licenses Expense', 'Bank Charges Expense', 'Depreciation Expense',
+    'Other Operating Expense'
+  ];
+  const [journalEntries, setJournalEntries] = useState<VAGeneralJournalEntry[]>([]);
+  const [journalLoading, setJournalLoading] = useState(false);
+  const [journalError, setJournalError] = useState('');
+  const [showJournalForm, setShowJournalForm] = useState(false);
+  const [editingJournalId, setEditingJournalId] = useState<string | null>(null);
+  const [journalDate, setJournalDate] = useState('');
+  const [journalNumber, setJournalNumber] = useState('');
+  const [journalDescription, setJournalDescription] = useState('');
+  const [journalDebitAccount, setJournalDebitAccount] = useState('Cash in Bank');
+  const [journalCreditAccount, setJournalCreditAccount] = useState("Owner's Capital");
+  const [journalAmount, setJournalAmount] = useState('');
+  const [journalNotesUrl, setJournalNotesUrl] = useState('');
+  const [journalSaving, setJournalSaving] = useState(false);
+  const [journalYear, setJournalYear] = useState(0);
+  useEffect(() => { setJournalYear(new Date().getFullYear()); setJournalDate(new Date().toISOString().slice(0, 10)); }, []);
+
+  async function loadJournalEntries(userId: string) {
+    setJournalLoading(true);
+    setJournalError('');
+    const { data, error } = await supabase.from('va_general_journal')
+      .select('*').eq('user_id', userId)
+      .order('entry_date', { ascending: false }).order('created_at', { ascending: false });
+    if (error) { setJournalError(error.message); setJournalEntries([]); }
+    else setJournalEntries((data || []) as VAGeneralJournalEntry[]);
+    setJournalLoading(false);
+  }
+
+  function resetJournalForm() {
+    setEditingJournalId(null);
+    setJournalDate(new Date().toISOString().slice(0, 10));
+    setJournalNumber('');
+    setJournalDescription('');
+    setJournalDebitAccount('Cash in Bank');
+    setJournalCreditAccount("Owner's Capital");
+    setJournalAmount('');
+    setJournalNotesUrl('');
+    setJournalError('');
+    setShowJournalForm(false);
+  }
+
+  function editJournalEntry(entry: VAGeneralJournalEntry) {
+    setEditingJournalId(entry.id);
+    setJournalDate(entry.entry_date);
+    setJournalNumber(entry.entry_number || '');
+    setJournalDescription(entry.description);
+    setJournalDebitAccount(entry.debit_account);
+    setJournalCreditAccount(entry.credit_account);
+    setJournalAmount(String(entry.amount));
+    setJournalNotesUrl(entry.notes_url || '');
+    setShowJournalForm(true);
+  }
+
+  async function saveJournalEntry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!user?.id) return;
+    const amount = Number(journalAmount.replace(/,/g, ''));
+    const notesUrl = journalNotesUrl.trim();
+    if (!journalDate || !journalDescription.trim() || !Number.isFinite(amount) || amount <= 0) {
+      setJournalError('Enter a date, description, and amount greater than zero.');
+      return;
+    }
+    if (journalDebitAccount === journalCreditAccount) {
+      setJournalError('Debit and credit accounts must be different.');
+      return;
+    }
+    if (notesUrl && !/^https:\/\//i.test(notesUrl)) {
+      setJournalError('The supporting-document link must begin with https://');
+      return;
+    }
+    setJournalSaving(true);
+    setJournalError('');
+    const payload = {
+      user_id: user.id, entry_date: journalDate,
+      entry_number: journalNumber.trim() || null,
+      description: journalDescription.trim(),
+      debit_account: journalDebitAccount, credit_account: journalCreditAccount,
+      amount, notes_url: notesUrl || null, updated_at: new Date().toISOString()
+    };
+    const query = editingJournalId
+      ? supabase.from('va_general_journal').update(payload).eq('id', editingJournalId).eq('user_id', user.id)
+      : supabase.from('va_general_journal').insert(payload);
+    const { error } = await query;
+    if (error) setJournalError(error.message);
+    else { resetJournalForm(); await loadJournalEntries(user.id); }
+    setJournalSaving(false);
+  }
+
+  async function deleteJournalEntry(id: string) {
+    if (!user?.id || !window.confirm('Delete this general journal entry?')) return;
+    const { error } = await supabase.from('va_general_journal').delete().eq('id', id).eq('user_id', user.id);
+    if (error) setJournalError(error.message);
+    else await loadJournalEntries(user.id);
+  }
+
   const router = useRouter();
   const supabase = createClient();
 
@@ -444,6 +580,7 @@ async function saveBIRAdjustment(event: FormEvent<HTMLFormElement>) {
   } else {
     resetBIRAdjustmentForm();
     await loadBIRAdjustments(user.id);
+await loadCashTransactions(user.id);
   }
   setBirAdjustmentSaving(false);
 }
@@ -454,6 +591,98 @@ async function deleteBIRAdjustment(id: string) {
     .delete().eq('id', id).eq('user_id', user.id);
   if (error) setBirAdjustmentError(error.message);
   else await loadBIRAdjustments(user.id);
+}
+
+
+async function loadCashTransactions(userId: string) {
+  setCashTransactionsLoading(true);
+  setCashTransactionError('');
+  const { data, error } = await supabase.from('va_cash_transactions')
+    .select('*').eq('user_id', userId)
+    .order('transaction_date', { ascending: false });
+  if (error) {
+    setCashTransactionError(error.message);
+    setCashTransactions([]);
+  } else setCashTransactions((data || []) as VACashTransaction[]);
+  setCashTransactionsLoading(false);
+}
+
+function resetCashTransactionForm() {
+  setEditingCashTransactionId(null);
+  setCashTransactionDate(new Date().toISOString().slice(0, 10));
+  setCashTransactionType('receipt');
+  setCashTransactionDescription('');
+  setCashTransactionCounterparty('');
+  setCashTransactionCategory('Professional fees');
+  setCashTransactionAmount('');
+  setCashTransactionPaymentMethod('Bank transfer');
+  setCashTransactionReference('');
+  setCashTransactionNotesUrl('');
+  setCashTransactionError('');
+  setShowCashTransactionForm(false);
+}
+
+function openEditCashTransaction(item: VACashTransaction) {
+  setEditingCashTransactionId(item.id);
+  setCashTransactionDate(item.transaction_date);
+  setCashTransactionType(item.transaction_type);
+  setCashTransactionDescription(item.description);
+  setCashTransactionCounterparty(item.counterparty || '');
+  setCashTransactionCategory(item.category);
+  setCashTransactionAmount(String(item.amount));
+  setCashTransactionPaymentMethod(item.payment_method || 'Other');
+  setCashTransactionReference(item.reference_no || '');
+  setCashTransactionNotesUrl(item.notes_url || '');
+  setCashTransactionError('');
+  setShowCashTransactionForm(true);
+}
+
+async function saveCashTransaction(event: FormEvent<HTMLFormElement>) {
+  event.preventDefault();
+  if (!user?.id) return;
+  const amount = Number(cashTransactionAmount.replace(/,/g, ''));
+  if (!cashTransactionDate || !cashTransactionDescription.trim() || !Number.isFinite(amount) || amount <= 0) {
+    setCashTransactionError('Enter a date, description, and amount greater than zero.');
+    return;
+  }
+  const notesUrl = cashTransactionNotesUrl.trim();
+  if (notesUrl && !/^https:\/\//i.test(notesUrl)) {
+    setCashTransactionError('The supporting-document link must begin with https://');
+    return;
+  }
+
+  setCashTransactionSaving(true);
+  setCashTransactionError('');
+  const payload = {
+    user_id: user.id,
+    transaction_date: cashTransactionDate,
+    transaction_type: cashTransactionType,
+    description: cashTransactionDescription.trim(),
+    counterparty: cashTransactionCounterparty.trim() || null,
+    category: cashTransactionCategory,
+    amount,
+    payment_method: cashTransactionPaymentMethod || null,
+    reference_no: cashTransactionReference.trim() || null,
+    notes_url: notesUrl || null,
+    updated_at: new Date().toISOString(),
+  };
+  const query = editingCashTransactionId
+    ? supabase.from('va_cash_transactions').update(payload).eq('id', editingCashTransactionId).eq('user_id', user.id)
+    : supabase.from('va_cash_transactions').insert(payload);
+  const { error } = await query;
+  if (error) setCashTransactionError(error.message);
+  else {
+    resetCashTransactionForm();
+    await loadCashTransactions(user.id);
+  }
+  setCashTransactionSaving(false);
+}
+
+async function deleteCashTransaction(id: string) {
+  if (!user?.id || !window.confirm('Delete this cash book entry?')) return;
+  const { error } = await supabase.from('va_cash_transactions').delete().eq('id', id).eq('user_id', user.id);
+  if (error) setCashTransactionError(error.message);
+  else await loadCashTransactions(user.id);
 }
 
 async function loadDocuments(userId: string) {
@@ -619,6 +848,8 @@ await loadProjects(user.id);
 await loadInvoices(user.id);
 await loadDocuments(user.id);
 await loadBIRAdjustments(user.id);
+await loadCashTransactions(user.id);
+await loadJournalEntries(user.id);
       setLoading(false);
     }
     getUser();
@@ -1415,6 +1646,8 @@ const calendarDays = [
             <button onClick={() => { setActiveTab('work'); setWorkView('tasks'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'work' ? t.navActive : t.navInactive}`}>📋 Work Management</button>
             <button onClick={() => { setActiveTab('tracker'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'tracker' ? t.navActive : t.navInactive}`}>⏱️ Time Tracker</button>
             <button onClick={() => { setActiveTab('invoices'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'invoices' ? t.navActive : t.navInactive}`}>💳 Invoices & Billing</button>
+            <button onClick={() => { setActiveTab('accounting'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'accounting' ? t.navActive : t.navInactive}`}>📚 Cash Book</button>
+            <button onClick={() => { setActiveTab('journal'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'journal' ? t.navActive : t.navInactive}`}>📖 General Journal</button>
             <button onClick={() => { setActiveTab('reports'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'reports' ? t.navActive : t.navInactive}`}>📈 Reports</button>
             <button onClick={() => { setActiveTab('documents'); setMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'documents' ? t.navActive : t.navInactive}`}>🧾 BIR Tax Center</button>
             <button
@@ -2727,6 +2960,345 @@ const calendarDays = [
 )}
 
      
+{activeTab === 'accounting' && (
+  <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
+    <style>{`
+      @media print {
+        body * { visibility: hidden !important; }
+        #cash-book-print, #cash-book-print * { visibility: visible !important; }
+        #cash-book-print { position: absolute; inset: 0; width: 100%; padding: 10mm; color: #000 !important; background: #fff !important; }
+        #cash-book-print * { color: #000 !important; background: #fff !important; box-shadow: none !important; }
+        #cash-book-print .no-print { display: none !important; }
+        #cash-book-print table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+        #cash-book-print th, #cash-book-print td { border: 1px solid #000 !important; padding: 5px; color: #000 !important; }
+        @page { size: A4 landscape; margin: 10mm; }
+      }
+    `}</style>
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
+      <div>
+        <h1 className="text-2xl font-black text-neutral-900">Cash Receipts and Disbursements</h1>
+        <p className="text-sm text-neutral-500 mt-1">Record cash actually received and paid, with links to supporting documents.</p>
+      </div>
+      <div className="no-print flex gap-2">
+        <button type="button" onClick={() => window.print()} className="rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm font-bold">Print / Save PDF</button>
+        <button type="button" onClick={() => { resetCashTransactionForm(); setShowCashTransactionForm(true); }} className={`rounded-xl px-4 py-2 text-sm font-bold ${t.accentBtn}`}>+ Add Entry</button>
+      </div>
+    </div>
+    <div className="no-print flex items-center gap-3 mb-5">
+      <label className="text-xs font-bold text-neutral-600">REPORTING YEAR</label>
+      <select value={cashRegisterYear} onChange={e => setCashRegisterYear(Number(e.target.value))} className="rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-sm">
+        {Array.from({ length: 12 }, (_, i) => new Date().getFullYear() - 5 + i).map(year => <option key={year} value={year}>{year}</option>)}
+      </select>
+    </div>
+
+    {showCashTransactionForm && (
+      <form onSubmit={saveCashTransaction} className="no-print rounded-2xl border border-neutral-300 bg-neutral-50 p-5 mb-6 space-y-4">
+        <div className="flex justify-between items-center">
+          <h2 className="font-bold">{editingCashTransactionId ? 'Edit entry' : 'Add cash book entry'}</h2>
+          <button type="button" onClick={resetCashTransactionForm} className="text-sm">Close</button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <label className="text-xs font-bold">ENTRY TYPE *
+            <select value={cashTransactionType} onChange={e => { const type = e.target.value as 'receipt' | 'disbursement'; setCashTransactionType(type); setCashTransactionCategory(type === 'receipt' ? 'Professional fees' : 'Office and operating expenses'); }} className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal">
+              <option value="receipt">Cash receipt – money received</option><option value="disbursement">Cash disbursement – money paid</option>
+            </select>
+          </label>
+          <label className="text-xs font-bold">DATE CASH WAS {cashTransactionType === 'receipt' ? 'RECEIVED' : 'PAID'} *
+            <input required type="date" value={cashTransactionDate} onChange={e => setCashTransactionDate(e.target.value)} className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal"/>
+          </label>
+          <label className="text-xs font-bold md:col-span-2">DESCRIPTION / PARTICULARS *
+            <input required value={cashTransactionDescription} onChange={e => setCashTransactionDescription(e.target.value)} placeholder="Describe the receipt or payment" className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal"/>
+          </label>
+          <label className="text-xs font-bold">CLIENT / PAYEE / SOURCE
+            <input value={cashTransactionCounterparty} onChange={e => setCashTransactionCounterparty(e.target.value)} placeholder="Client, supplier, or other party" className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal"/>
+          </label>
+          <label className="text-xs font-bold">ACCOUNT CATEGORY
+            <select value={cashTransactionCategory} onChange={e => setCashTransactionCategory(e.target.value)} className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal">
+              {cashTransactionType === 'receipt' ? <><option>Professional fees</option><option>Other business receipts</option><option>Refund received</option><option>Owner contribution</option><option>Other receipt</option></> : <><option>Office and operating expenses</option><option>Internet and communications</option><option>Transportation and travel</option><option>Supplies</option><option>Professional fees paid</option><option>Taxes and licenses</option><option>Bank charges</option><option>Equipment and assets</option><option>Owner withdrawal</option><option>Other disbursement</option></>}
+            </select>
+          </label>
+          <label className="text-xs font-bold">AMOUNT (₱) *
+            <input required inputMode="decimal" value={cashTransactionAmount} onChange={e => setCashTransactionAmount(e.target.value.replace(/[^0-9.,]/g, ''))} placeholder="0.00" className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal"/>
+          </label>
+          <label className="text-xs font-bold">PAYMENT METHOD
+            <select value={cashTransactionPaymentMethod} onChange={e => setCashTransactionPaymentMethod(e.target.value)} className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal">
+              <option>Bank transfer</option><option>Cash</option><option>E-wallet</option><option>Check</option><option>Card</option><option>Other</option>
+            </select>
+          </label>
+          <label className="text-xs font-bold">REFERENCE NUMBER
+            <input value={cashTransactionReference} onChange={e => setCashTransactionReference(e.target.value)} placeholder="Bank / check reference" className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal"/>
+          </label>
+          <label className="text-xs font-bold">NOTES / SUPPORTING DOCUMENT LINK
+            <input type="url" value={cashTransactionNotesUrl} onChange={e => setCashTransactionNotesUrl(e.target.value)} placeholder="https://drive.google.com/..." className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal"/>
+          </label>
+        </div>
+        {cashTransactionError && <p className="text-sm text-red-700">{cashTransactionError}</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={resetCashTransactionForm} className="rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm">Cancel</button>
+          <button disabled={cashTransactionSaving} className={`rounded-xl px-5 py-2 text-sm font-bold ${t.accentBtn} disabled:opacity-50`}>{cashTransactionSaving ? 'Saving...' : editingCashTransactionId ? 'Update Entry' : 'Save Entry'}</button>
+        </div>
+      </form>
+    )}
+    {cashTransactionError && !showCashTransactionForm && <p className="no-print text-sm text-red-700 mb-3">{cashTransactionError}</p>}
+    {cashTransactionsLoading && <p className="text-sm text-neutral-500">Loading entries...</p>}
+
+    {(() => {
+      // Bring existing manual BIR income records into the Cash Book as imported receipts.
+      // They remain owned by the BIR Tax Center, so they are not duplicated in Supabase.
+      const manualReceipts = birAdjustments
+        .filter(item => cashRegisterYear > 0 && item.income_date?.slice(0, 4) === String(cashRegisterYear))
+        .map(item => ({
+          id: `manual-${item.id}`,
+          transaction_date: item.income_date,
+          transaction_type: 'receipt' as const,
+          description: item.description,
+          counterparty: item.source || 'Manual income entry',
+          category: 'Manual income (BIR Tax Center)',
+          amount: Number(item.amount) || 0,
+          payment_method: null,
+          reference_no: null,
+          notes_url: item.document_url,
+          isManual: true,
+          sourceId: item.id,
+        }));
+      const cashRows = cashTransactions
+        .filter(item => cashRegisterYear > 0 && item.transaction_date.slice(0, 4) === String(cashRegisterYear))
+        .map(item => ({ ...item, isManual: false as const, sourceId: item.id }));
+      const entries = [...cashRows, ...manualReceipts]
+        .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date));
+      const receipts = entries.filter(item => item.transaction_type === 'receipt').reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      const payments = entries.filter(item => item.transaction_type === 'disbursement').reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      return <div id="cash-book-print">
+        <div className="hidden print:block text-center mb-5">
+          <h1 className="text-lg font-bold">CASH RECEIPTS AND DISBURSEMENTS REGISTER</h1>
+          <p>Individual Professional / Self-Employed – Non-VAT | Calendar Year {cashRegisterYear}</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+          <div className="rounded-xl border border-neutral-300 p-4"><p className="text-xs font-bold text-neutral-500">TOTAL RECEIPTS</p><p className="text-xl font-black">{formatPeso(receipts)}</p></div>
+          <div className="rounded-xl border border-neutral-300 p-4"><p className="text-xs font-bold text-neutral-500">TOTAL DISBURSEMENTS</p><p className="text-xl font-black">{formatPeso(payments)}</p></div>
+          <div className="rounded-xl border border-neutral-300 p-4"><p className="text-xs font-bold text-neutral-500">NET CASH MOVEMENT</p><p className="text-xl font-black">{formatPeso(receipts - payments)}</p></div>
+        </div>
+        <div className="overflow-x-auto rounded-xl border border-neutral-300">
+          <table className="w-full min-w-[850px] text-left text-sm">
+            <thead className="bg-neutral-100"><tr><th className="p-3">Date</th><th className="p-3">Type</th><th className="p-3">Particulars</th><th className="p-3">Payee / Source</th><th className="p-3">Category</th><th className="p-3 text-right">Receipts</th><th className="p-3 text-right">Disbursements</th><th className="p-3">Notes link</th><th className="p-3 no-print">Actions</th></tr></thead>
+            <tbody>{entries.length === 0 ? <tr><td colSpan={9} className="p-8 text-center text-neutral-500">No entries recorded for {cashRegisterYear}.</td></tr> : entries.map(item => <tr key={item.id} className="border-t border-neutral-200">
+              <td className="p-3 whitespace-nowrap">{item.transaction_date}</td><td className="p-3">{item.transaction_type === 'receipt' ? 'Receipt' : 'Disbursement'}{item.isManual && <span className="block text-xs text-neutral-500">Imported</span>}</td><td className="p-3">{item.description}</td><td className="p-3">{item.counterparty || '—'}</td><td className="p-3">{item.category}</td>
+              <td className="p-3 text-right">{item.transaction_type === 'receipt' ? formatPeso(item.amount) : '—'}</td><td className="p-3 text-right">{item.transaction_type === 'disbursement' ? formatPeso(item.amount) : '—'}</td>
+              <td className="p-3">{item.notes_url ? <a href={item.notes_url} target="_blank" rel="noopener noreferrer" className="underline">Supporting document</a> : '—'}</td>
+              <td className="p-3 no-print whitespace-nowrap">{item.isManual ? <button type="button" onClick={() => setActiveTab('documents')} className="underline">Manage in BIR Tax Center</button> : <><button type="button" onClick={() => openEditCashTransaction(item as VACashTransaction)} className="mr-3 underline">Edit</button><button type="button" onClick={() => deleteCashTransaction(item.id)} className="text-red-700 underline">Delete</button></>}</td>
+            </tr>)}</tbody>
+            <tfoot className="border-t-2 border-black font-bold"><tr><td colSpan={5} className="p-3 text-right">TOTAL</td><td className="p-3 text-right">{formatPeso(receipts)}</td><td className="p-3 text-right">{formatPeso(payments)}</td><td colSpan={2}></td></tr></tfoot>
+          </table>
+        </div>
+        <p className="mt-3 text-xs text-neutral-600">Manual income entries from the BIR Tax Center are included automatically as cash receipts. Do not enter the same receipt again here. To edit or delete an imported manual entry, use the BIR Tax Center. Keep original invoices, receipts, bank statements, and supporting evidence.</p>
+        <p className="mt-2 text-xs text-neutral-500">Recordkeeping aid only. Confirm accounting and tax classifications with your accountant or tax professional.</p>
+      </div>;
+    })()}
+  </div>
+)}
+
+
+
+{activeTab === 'journal' && (
+  <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
+    <style jsx global>{`
+      @media print {
+        body * { visibility: hidden !important; }
+        #general-journal-print, #general-journal-print * { visibility: visible !important; }
+        #general-journal-print { position: absolute; inset: 0; width: 100%; padding: 10mm; color: #000 !important; background: #fff !important; }
+        #general-journal-print * { color: #000 !important; background: #fff !important; box-shadow: none !important; }
+        #general-journal-print .no-print { display: none !important; }
+        #general-journal-print table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+        #general-journal-print th, #general-journal-print td { border: 1px solid #000 !important; padding: 5px; }
+      }
+    `}</style>
+    <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+      <div>
+        <h1 className="text-2xl font-black text-neutral-900">📖 General Journal</h1>
+        <p className="text-sm text-neutral-500 mt-1">Record properly supported adjusting, opening, and other non-cash journal entries.</p>
+      </div>
+      <div className="flex gap-2 no-print">
+        <button type="button" onClick={() => window.print()} className="rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-sm font-bold">Print / Save PDF</button>
+        <button type="button" onClick={() => { resetJournalForm(); setShowJournalForm(true); }} className={`rounded-xl px-4 py-2.5 text-sm font-bold ${t.accentBtn}`}>+ Add Journal Entry</button>
+      </div>
+    </div>
+    <div className="flex flex-wrap items-center gap-3 mb-5 no-print">
+      <label className="text-xs font-bold text-neutral-600">REPORTING YEAR
+        <select value={journalYear} onChange={e => setJournalYear(Number(e.target.value))} className="ml-3 rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-sm font-normal">
+          {[...new Set([
+            new Date().getFullYear(),
+            ...journalEntries.map(entry => Number(entry.entry_date.slice(0, 4))),
+            ...birAdjustments.map(entry => Number(entry.income_date.slice(0, 4))),
+            ...cashTransactions.map(entry => Number(entry.transaction_date.slice(0, 4))),
+          ])].filter(year => Number.isFinite(year) && year > 1900).sort((a, b) => b - a).map(year => <option key={year} value={year}>{year}</option>)}
+        </select>
+      </label>
+    </div>
+    {showJournalForm && (
+      <form onSubmit={saveJournalEntry} className="rounded-2xl border border-neutral-300 p-5 mb-5 no-print">
+        <div className="flex justify-between items-center mb-4"><h2 className="font-bold">{editingJournalId ? 'Edit journal entry' : 'New journal entry'}</h2><button type="button" onClick={resetJournalForm} className="text-sm text-neutral-500">Close</button></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <label className="text-xs font-bold">ENTRY DATE *
+            <input required type="date" value={journalDate} onChange={e => setJournalDate(e.target.value)} className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal"/>
+          </label>
+          <label className="text-xs font-bold">REFERENCE / ENTRY NUMBER
+            <input value={journalNumber} onChange={e => setJournalNumber(e.target.value)} placeholder="e.g. GJ-2026-001" className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal"/>
+          </label>
+          <label className="text-xs font-bold md:col-span-2">PARTICULARS / EXPLANATION *
+            <input required value={journalDescription} onChange={e => setJournalDescription(e.target.value)} placeholder="Explain the transaction and why this journal entry is needed" className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal"/>
+          </label>
+          <label className="text-xs font-bold">DEBIT ACCOUNT *
+            <select value={journalDebitAccount} onChange={e => setJournalDebitAccount(e.target.value)} className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal">{JOURNAL_ACCOUNTS.map(account => <option key={account}>{account}</option>)}</select>
+          </label>
+          <label className="text-xs font-bold">CREDIT ACCOUNT *
+            <select value={journalCreditAccount} onChange={e => setJournalCreditAccount(e.target.value)} className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal">{JOURNAL_ACCOUNTS.map(account => <option key={account}>{account}</option>)}</select>
+          </label>
+          <label className="text-xs font-bold">AMOUNT (₱) *
+            <input required inputMode="decimal" value={journalAmount} onChange={e => setJournalAmount(e.target.value.replace(/[^0-9.,]/g, ''))} placeholder="0.00" className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal"/>
+          </label>
+          <label className="text-xs font-bold">NOTES / SUPPORTING DOCUMENT LINK
+            <input type="url" value={journalNotesUrl} onChange={e => setJournalNotesUrl(e.target.value)} placeholder="https://drive.google.com/..." className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal"/>
+          </label>
+        </div>
+        <p className="text-xs text-neutral-500 mt-3">Each entry records equal debit and credit amounts. Use this form for entries that are not already recorded in the Cash Book. Avoid duplicating cash receipts or payments.</p>
+        {journalError && <p className="text-sm text-red-700 mt-3">{journalError}</p>}
+        <div className="flex justify-end gap-2 mt-4">
+          <button type="button" onClick={resetJournalForm} className="rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm">Cancel</button>
+          <button disabled={journalSaving} className={`rounded-xl px-5 py-2 text-sm font-bold ${t.accentBtn} disabled:opacity-50`}>{journalSaving ? 'Saving...' : editingJournalId ? 'Update Entry' : 'Save Entry'}</button>
+        </div>
+      </form>
+    )}
+    {journalError && !showJournalForm && <p className="text-sm text-red-700 mb-3">{journalError}</p>}
+    {journalLoading ? <p className="text-sm text-neutral-500">Loading journal entries...</p> : (
+      <div id="general-journal-print">
+        <div className="hidden print:block text-center mb-5">
+          <h1 className="text-lg font-bold">GENERAL JOURNAL</h1>
+          <p>Individual Professional / Self-Employed – Non-VAT | Calendar Year {journalYear}</p>
+        </div>
+        {(() => {
+          // Historical source transactions are displayed as imported journal lines.
+          // They are NOT inserted into va_general_journal, preventing duplicate postings.
+          const savedRows = journalEntries
+            .filter(entry => entry.entry_date.slice(0, 4) === String(journalYear))
+            .map(entry => ({ ...entry, isImported: false as const, sourceType: 'journal' as const }));
+
+          const importedIncomeRows = birAdjustments
+            .filter(entry => entry.income_date.slice(0, 4) === String(journalYear))
+            .map(entry => ({
+              id: `bir-${entry.id}`,
+              user_id: entry.user_id,
+              entry_date: entry.income_date,
+              entry_number: `BIR-${entry.tax_year}-${entry.id.slice(0, 6)}`,
+              description: entry.description,
+              debit_account: 'Cash in Bank',
+              credit_account: 'Professional Fees Income',
+              amount: Number(entry.amount) || 0,
+              notes_url: entry.document_url,
+              created_at: entry.created_at,
+              isImported: true as const,
+              sourceType: 'bir' as const,
+            }));
+
+          const importedCashRows = cashTransactions
+            .filter(entry => entry.transaction_date.slice(0, 4) === String(journalYear))
+            .map(entry => {
+              const isReceipt = entry.transaction_type === 'receipt';
+              const cashAccount = entry.payment_method?.toLowerCase() === 'cash' ? 'Cash on Hand' : 'Cash in Bank';
+              const expenseAccount = JOURNAL_ACCOUNTS.includes(entry.category) ? entry.category : 'Other Operating Expense';
+              return {
+                id: `cash-${entry.id}`,
+                user_id: entry.user_id,
+                entry_date: entry.transaction_date,
+                entry_number: entry.reference_no || `CASH-${entry.id.slice(0, 6)}`,
+                description: entry.description,
+                debit_account: isReceipt ? cashAccount : expenseAccount,
+                credit_account: isReceipt ? 'Professional Fees Income' : cashAccount,
+                amount: Number(entry.amount) || 0,
+                notes_url: entry.notes_url,
+                created_at: entry.created_at,
+                isImported: true as const,
+                sourceType: 'cash' as const,
+              };
+            });
+
+          const rows = [...savedRows, ...importedIncomeRows, ...importedCashRows]
+            .sort((a, b) => b.entry_date.localeCompare(a.entry_date));
+          const total = rows.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+          return <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+              <div className="rounded-xl border border-neutral-300 p-4"><p className="text-xs font-bold text-neutral-500">JOURNAL ENTRIES</p><p className="text-xl font-black">{rows.length}</p></div>
+              <div className="rounded-xl border border-neutral-300 p-4"><p className="text-xs font-bold text-neutral-500">TOTAL DEBITS</p><p className="text-xl font-black">{formatPeso(total)}</p></div>
+              <div className="rounded-xl border border-neutral-300 p-4"><p className="text-xs font-bold text-neutral-500">TOTAL CREDITS</p><p className="text-xl font-black">{formatPeso(total)}</p></div>
+            </div>
+            <div className="overflow-x-auto rounded-xl border border-neutral-300">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead className="bg-neutral-100">
+                  <tr>
+                    <th className="p-3 w-[130px]">Date</th>
+                    <th className="p-3">Particulars</th>
+                    <th className="p-3">Ref. No.</th>
+                    <th className="p-3 text-right">Debit (₱)</th>
+                    <th className="p-3 text-right">Credit (₱)</th>
+                    <th className="p-3 no-print">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length === 0 ? (
+                    <tr><td colSpan={6} className="p-8 text-center text-neutral-500">No journal entries recorded for {journalYear}.</td></tr>
+                  ) : rows.map(entry => (
+                    <Fragment key={entry.id}>
+                      <tr className="border-t border-neutral-200">
+                        <td rowSpan={2} className="p-3 align-top whitespace-nowrap">{entry.entry_date}</td>
+                        <td className="p-3 font-medium">{entry.debit_account}</td>
+                        <td rowSpan={2} className="p-3 align-top">{entry.entry_number || '—'}</td>
+                        <td className="p-3 text-right align-top">{formatPeso(entry.amount)}</td>
+                        <td className="p-3 text-right align-top">—</td>
+                        <td rowSpan={2} className="p-3 no-print align-top whitespace-nowrap">
+                          {entry.isImported ? (
+                            <span className="text-xs text-neutral-500">Imported from {entry.sourceType === 'bir' ? 'BIR Tax Center' : 'Cash Book'}</span>
+                          ) : (
+                            <>
+                              <button type="button" onClick={() => editJournalEntry(entry)} className="mr-3 underline">Edit</button>
+                              <button type="button" onClick={() => deleteJournalEntry(entry.id)} className="text-red-700 underline">Delete</button>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                      <tr className="border-b border-neutral-200">
+                        <td className="py-2 pl-9 pr-3 text-neutral-700">{entry.credit_account}</td>
+                        <td className="p-3 text-right">—</td>
+                        <td className="p-3 text-right">{formatPeso(entry.amount)}</td>
+                      </tr>
+                      <tr className="border-b border-neutral-200">
+                        <td></td>
+                        <td colSpan={4} className="px-3 pb-3 pt-0 text-xs text-neutral-500">
+                          {entry.description}
+                          {entry.notes_url && <span> · <a href={entry.notes_url} target="_blank" rel="noopener noreferrer" className="underline">Supporting document</a></span>}
+                        </td>
+                        <td className="no-print"></td>
+                      </tr>
+                    </Fragment>
+                  ))}
+                </tbody>
+                <tfoot className="border-t-2 border-black font-bold">
+                  <tr>
+                    <td colSpan={3} className="p-3 text-right">TOTAL</td>
+                    <td className="p-3 text-right">{formatPeso(total)}</td>
+                    <td className="p-3 text-right">{formatPeso(total)}</td>
+                    <td className="no-print"></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </>;
+        })()}
+        <p className="mt-3 text-xs text-neutral-600">Historical BIR income and Cash Book transactions are displayed as imported journal lines using the original transaction dates. Imported lines remain linked to their source records and are not saved again in the General Journal, preventing duplicate entries. Account classifications are provisional; review cash/bank accounts and expense categories before relying on these lines for formal accounting reports.</p>
+      </div>
+    )}
+  </div>
+)}
+
+
 {activeTab === 'reports' && (
   <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
     <h1 className="text-2xl font-black text-neutral-900 mb-1">
