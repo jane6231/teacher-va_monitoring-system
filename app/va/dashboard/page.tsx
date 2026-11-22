@@ -2992,7 +2992,7 @@ const calendarDays = [
                     </select>
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-xs font-bold text-neutral-600 mb-1">SUPPORTING DOCUMENT LINK (OPTIONAL)</label>
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">RECEIPT LINK (OPTIONAL)</label>
                     <input
                       type="url"
                       value={birIncomeDocumentUrl}
@@ -3001,7 +3001,7 @@ const calendarDays = [
                       className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm"
                     />
                     <p className="text-xs text-neutral-500 mt-1">
-                      Add a Google Drive, OneDrive, Dropbox, or other share link for the receipt or supporting record.
+                      Paste the Google Drive, OneDrive, Dropbox, or other link to the receipt for this income entry.
                     </p>
                   </div>
                 </div>
@@ -3027,7 +3027,7 @@ const calendarDays = [
                         {item.document_url && (
                           <a href={item.document_url} target="_blank" rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 mt-1 text-xs font-semibold text-blue-700 hover:underline">
-                            ↗ Open supporting document
+                            ↗ View Receipt
                           </a>
                         )}</div>
                       <div className="flex items-center gap-3"><span className="font-bold text-neutral-900">{formatPeso(item.amount)}</span>
