@@ -3464,8 +3464,11 @@ const calendarDays = [
           const debitTotal = lines.filter(line => line.account === account).reduce((sum, line) => sum + line.debit, 0);
           const creditTotal = lines.filter(line => line.account === account).reduce((sum, line) => sum + line.credit, 0);
           const net = debitTotal - creditTotal;
-          const debitBalance = normalDebitAccounts.includes(account) ? Math.max(net, 0) : Math.max(-net, 0);
-          const creditBalance = normalDebitAccounts.includes(account) ? Math.max(-net, 0) : Math.max(net, 0);
+          // Net debit balance = total debits minus total credits.
+          // Place a positive net in Debit and a negative net in Credit,
+          // regardless of the account's normal balance.
+          const debitBalance = Math.max(net, 0);
+          const creditBalance = Math.max(-net, 0);
           return { account, debitBalance, creditBalance };
         }).filter(row => row.debitBalance > 0.000001 || row.creditBalance > 0.000001);
         const totalDebit = rows.reduce((sum, row) => sum + row.debitBalance, 0);
