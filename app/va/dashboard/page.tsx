@@ -334,6 +334,19 @@ useEffect(() => {
     'Taxes and Licenses Expense', 'Bank Charges Expense', 'Depreciation Expense',
     'Other Operating Expense'
   ];
+  type VAChartAccount = { id: string; user_id: string; account_code: string; account_name: string; account_type: 'Asset' | 'Liability' | 'Equity' | 'Income' | 'Expense'; normal_balance: 'Debit' | 'Credit'; description: string | null; is_active: boolean; created_at: string; updated_at: string; };
+  const [chartAccounts, setChartAccounts] = useState<VAChartAccount[]>([]);
+  const [chartAccountsLoading, setChartAccountsLoading] = useState(false);
+  const [chartAccountsError, setChartAccountsError] = useState('');
+  const [showChartAccountForm, setShowChartAccountForm] = useState(false);
+  const [editingChartAccountId, setEditingChartAccountId] = useState<string | null>(null);
+  const [chartAccountCode, setChartAccountCode] = useState('');
+  const [chartAccountName, setChartAccountName] = useState('');
+  const [chartAccountType, setChartAccountType] = useState<VAChartAccount['account_type']>('Asset');
+  const [chartAccountNormalBalance, setChartAccountNormalBalance] = useState<VAChartAccount['normal_balance']>('Debit');
+  const [chartAccountDescription, setChartAccountDescription] = useState('');
+  const [chartAccountSaving, setChartAccountSaving] = useState(false);
+  const activeJournalAccountNames = chartAccounts.length ? chartAccounts.filter(a => a.is_active).map(a => a.account_name) : JOURNAL_ACCOUNTS;
   const [journalEntries, setJournalEntries] = useState<VAGeneralJournalEntry[]>([]);
   const [journalLoading, setJournalLoading] = useState(false);
   const [journalError, setJournalError] = useState('');
@@ -361,6 +374,48 @@ useEffect(() => {
     String(now.getMonth() + 1).padStart(2, "0")
   );
 }, []);
+
+  async function loadChartAccounts(userId: string) {
+    setChartAccountsLoading(true);
+    setChartAccountsError('');
+    const { data, error } = await supabase.from('va_chart_of_accounts').select('*').eq('user_id', userId).order('account_code');
+    if (error) { setChartAccountsError(error.message); setChartAccounts([]); }
+    else setChartAccounts((data || []) as VAChartAccount[]);
+    setChartAccountsLoading(false);
+  }
+
+  function resetChartAccountForm() {
+    setEditingChartAccountId(null); setChartAccountCode(''); setChartAccountName('');
+    setChartAccountType('Asset'); setChartAccountNormalBalance('Debit');
+    setChartAccountDescription(''); setShowChartAccountForm(false); setChartAccountsError('');
+  }
+
+  function editChartAccount(a: VAChartAccount) {
+    setEditingChartAccountId(a.id); setChartAccountCode(a.account_code); setChartAccountName(a.account_name);
+    setChartAccountType(a.account_type); setChartAccountNormalBalance(a.normal_balance);
+    setChartAccountDescription(a.description || ''); setShowChartAccountForm(true);
+  }
+
+  async function saveChartAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!user?.id) return;
+    if (!chartAccountCode.trim() || !chartAccountName.trim()) { setChartAccountsError('Enter an account code and account name.'); return; }
+    setChartAccountSaving(true); setChartAccountsError('');
+    const payload = { user_id: user.id, account_code: chartAccountCode.trim(), account_name: chartAccountName.trim(), account_type: chartAccountType, normal_balance: chartAccountNormalBalance, description: chartAccountDescription.trim() || null, updated_at: new Date().toISOString() };
+    const query = editingChartAccountId
+      ? supabase.from('va_chart_of_accounts').update(payload).eq('id', editingChartAccountId).eq('user_id', user.id)
+      : supabase.from('va_chart_of_accounts').insert(payload);
+    const { error } = await query;
+    if (error) setChartAccountsError(error.message);
+    else { resetChartAccountForm(); await loadChartAccounts(user.id); }
+    setChartAccountSaving(false);
+  }
+
+  async function toggleChartAccount(a: VAChartAccount) {
+    if (!user?.id) return;
+    const { error } = await supabase.from('va_chart_of_accounts').update({ is_active: !a.is_active, updated_at: new Date().toISOString() }).eq('id', a.id).eq('user_id', user.id);
+    if (error) setChartAccountsError(error.message); else await loadChartAccounts(user.id);
+  }
 
   async function loadJournalEntries(userId: string) {
     setJournalLoading(true);
@@ -868,6 +923,7 @@ await loadDocuments(user.id);
 await loadBIRAdjustments(user.id);
 await loadCashTransactions(user.id);
 await loadJournalEntries(user.id);
+await loadChartAccounts(user.id);
       setLoading(false);
     }
     getUser();
@@ -1529,7 +1585,7 @@ useEffect(() => {
   const activeGroup =
     activeTab === 'dashboard' ? 'overview' :
     activeTab === 'work' || activeTab === 'tracker' ? 'work' :
-    ['invoices', 'accounting', 'journal', 'ledger', 'trial-balance', 'financial-statements', 'reports'].includes(activeTab) ? 'finance' :
+    ['invoices', 'accounting', 'chart-of-accounts', 'journal', 'ledger', 'trial-balance', 'financial-statements', 'reports'].includes(activeTab) ? 'finance' :
     activeTab === 'documents' ? 'tax' : null;
 
   if (activeGroup) {
@@ -1647,6 +1703,37 @@ const calendarDays = [
   ...Array.from({ length: totalDaysInMonth }, (_, i) => i + 1)
 ];
 
+// Calendar items are derived from saved tasks and projects, so status/date edits
+// automatically appear after the existing Supabase loaders refresh the state.
+const calendarDateKey = (year: number, monthIndex: number, day: number) =>
+  `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+const calendarWorkByDate = new Map<string, Array<{
+  id: string;
+  title: string;
+  kind: 'task' | 'project';
+  status: string;
+  priority?: string;
+}>>();
+
+const addCalendarWork = (date: string | null, item: {
+  id: string; title: string; kind: 'task' | 'project'; status: string; priority?: string;
+}) => {
+  if (!date) return;
+  const key = date.slice(0, 10);
+  const existing = calendarWorkByDate.get(key) || [];
+  existing.push(item);
+  calendarWorkByDate.set(key, existing);
+};
+
+tasks.filter(task => task.status !== 'completed').forEach(task => addCalendarWork(task.due_date, {
+  id: task.id, title: task.title, kind: 'task', status: task.status, priority: task.priority,
+}));
+
+projects.filter(project => project.status !== 'completed').forEach(project => addCalendarWork(project.due_date, {
+  id: project.id, title: project.project_name, kind: 'project', status: project.status,
+}));
+
 
   return (
     <div className={`flex min-h-screen w-full max-w-full overflow-x-hidden ${t.bgMain} text-neutral-900 transition-colors duration-300`}>
@@ -1681,6 +1768,7 @@ const calendarDays = [
               { id: 'finance', label: 'ACCOUNTING & FINANCE', icon: '💼', items: [
                 { id: 'invoices', label: '💳 Invoices & Billing' },
                 { id: 'accounting', label: '📚 Cash Book' },
+                { id: 'chart-of-accounts', label: '🗃️ Chart of Accounts' },
                 { id: 'journal', label: '📖 General Journal' },
                 { id: 'ledger', label: '📚 General Ledger' },
                 { id: 'trial-balance', label: '⚖️ Trial Balance' },
@@ -1872,11 +1960,58 @@ const calendarDays = [
 
               <div className={`grid grid-cols-7 text-center font-bold text-xs ${t.textMuted} py-3 border-b border-neutral-100`}><span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span></div>
               <div className="grid grid-cols-7 gap-1 sm:gap-2 pt-4">
-                {calendarDays.map((day, index) => (
-                  <div key={index} className={`h-24 p-2 border rounded-xl flex flex-col justify-between ${day ? `${t.cardBorder}${t.cardBg} shadow-xs` : 'border-neutral-100 bg-neutral-50/40'}`}>
-                    {day && <span className="text-xs font-bold text-neutral-700">{day}</span>}
-                  </div>
-                ))}
+                {calendarDays.map((day, index) => {
+                  const dateKey = day ? calendarDateKey(currentYear, currentMonthIndex, day) : '';
+                  const workItems = dateKey ? (calendarWorkByDate.get(dateKey) || []) : [];
+                  const isToday = day === new Date().getDate()
+                    && currentMonthIndex === new Date().getMonth()
+                    && currentYear === new Date().getFullYear();
+                  return (
+                    <div key={index} className={`min-h-28 p-2 border rounded-xl flex flex-col gap-2 ${day ? `${t.cardBorder}${t.cardBg} shadow-xs` : 'border-neutral-100 bg-neutral-50/40'}`}>
+                      {day && (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <span className={`text-xs font-bold ${isToday ? 'bg-black text-white rounded-full w-6 h-6 flex items-center justify-center' : 'text-neutral-700'}`}>{day}</span>
+                            {workItems.length > 0 && <span className="text-[10px] font-semibold text-neutral-500">{workItems.length} item{workItems.length === 1 ? '' : 's'}</span>}
+                          </div>
+                          <div className="space-y-1 overflow-hidden">
+                            {workItems.slice(0, 3).map(item => (
+                              <button
+                                key={`${item.kind}-${item.id}`}
+                                type="button"
+                                title={`${item.kind === 'task' ? 'Task' : 'Project'}: ${item.title} (${item.status.replace('_', ' ')})`}
+                                onClick={() => {
+                                  setActiveTab('work');
+                                  setWorkView(item.kind === 'project' ? 'projects' : 'tasks');
+                                }}
+                                className={`block w-full truncate rounded-md px-1.5 py-1 text-left text-[10px] font-semibold ${
+                                  item.kind === 'project'
+                                    ? 'bg-blue-50 text-blue-800 hover:bg-blue-100'
+                                    : item.status === 'in_progress'
+                                      ? 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                                      : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                                }`}
+                              >
+                                {item.kind === 'project' ? '📁' : item.status === 'in_progress' ? '🔄' : '⏳'} {item.title}
+                              </button>
+                            ))}
+                            {workItems.length > 3 && (
+                              <button type="button" onClick={() => { setActiveTab('work'); setWorkView('tasks'); }} className="text-[10px] font-semibold text-neutral-500 hover:underline">
+                                +{workItems.length - 3} more
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-4 flex flex-wrap gap-4 text-xs text-neutral-500">
+                <span>⏳ Pending task</span>
+                <span>🔄 In-progress task</span>
+                <span>📁 Active / on-hold project</span>
+                <span>Completed work is hidden from the calendar.</span>
               </div>
             </div>
           </>
@@ -3160,6 +3295,34 @@ const calendarDays = [
 
 
 
+{activeTab === 'chart-of-accounts' && (
+  <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+      <div><h1 className="text-2xl font-black text-neutral-900">🗃️ Chart of Accounts</h1><p className="text-sm text-neutral-500">Manage the accounts used by your General Journal.</p></div>
+      <button type="button" onClick={() => { resetChartAccountForm(); setShowChartAccountForm(true); }} className={`rounded-xl px-4 py-2.5 text-sm font-bold ${t.accentBtn}`}>+ Add Account</button>
+    </div>
+    {chartAccountsError && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{chartAccountsError}</p>}
+    {showChartAccountForm && <form onSubmit={saveChartAccount} className="mb-6 rounded-xl border border-neutral-200 bg-neutral-50 p-4 space-y-4">
+      <h2 className="font-bold">{editingChartAccountId ? 'Edit Account' : 'Add Account'}</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label className="text-sm font-semibold">Account Code<input value={chartAccountCode} onChange={e => setChartAccountCode(e.target.value)} required maxLength={20} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 font-normal" placeholder="e.g. 1010" /></label>
+        <label className="text-sm font-semibold">Account Name<input value={chartAccountName} onChange={e => setChartAccountName(e.target.value)} required maxLength={120} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 font-normal" placeholder="e.g. Cash in Bank" /></label>
+        <label className="text-sm font-semibold">Account Type<select value={chartAccountType} onChange={e => { const v = e.target.value as VAChartAccount['account_type']; setChartAccountType(v); setChartAccountNormalBalance(['Asset','Expense'].includes(v) ? 'Debit' : 'Credit'); }} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 font-normal">{(['Asset','Liability','Equity','Income','Expense'] as const).map(v => <option key={v}>{v}</option>)}</select></label>
+        <label className="text-sm font-semibold">Normal Balance<select value={chartAccountNormalBalance} onChange={e => setChartAccountNormalBalance(e.target.value as VAChartAccount['normal_balance'])} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 font-normal"><option>Debit</option><option>Credit</option></select></label>
+        <label className="text-sm font-semibold sm:col-span-2">Description (optional)<input value={chartAccountDescription} onChange={e => setChartAccountDescription(e.target.value)} maxLength={300} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 font-normal" /></label>
+      </div>
+      <div className="flex justify-end gap-2"><button type="button" onClick={resetChartAccountForm} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm">Cancel</button><button type="submit" disabled={chartAccountSaving} className={`rounded-lg px-4 py-2 text-sm font-bold disabled:opacity-50 ${t.accentBtn}`}>{chartAccountSaving ? 'Saving...' : 'Save Account'}</button></div>
+    </form>}
+    {chartAccountsLoading ? <p className="py-10 text-center text-sm text-neutral-500">Loading accounts...</p> : chartAccounts.length === 0 ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Run the Supabase Chart of Accounts migration, then refresh this page. Existing journal account choices remain available until the catalog is populated.</div> : (
+      <div className="overflow-x-auto rounded-xl border border-neutral-200"><table className="w-full min-w-[760px] text-sm">
+        <thead className="bg-neutral-100 text-neutral-700"><tr><th className="p-3 text-left">Code</th><th className="p-3 text-left">Account Name</th><th className="p-3 text-left">Type</th><th className="p-3 text-left">Normal Balance</th><th className="p-3 text-left">Status</th><th className="p-3 text-right">Actions</th></tr></thead>
+        <tbody>{chartAccounts.map(a => <tr key={a.id} className="border-t border-neutral-200"><td className="p-3">{a.account_code}</td><td className="p-3 font-medium">{a.account_name}{a.description && <p className="mt-1 text-xs font-normal text-neutral-500">{a.description}</p>}</td><td className="p-3">{a.account_type}</td><td className="p-3">{a.normal_balance}</td><td className="p-3">{a.is_active ? 'Active' : 'Inactive'}</td><td className="p-3 text-right whitespace-nowrap"><button type="button" onClick={() => editChartAccount(a)} className="mr-3 underline">Edit</button><button type="button" onClick={() => toggleChartAccount(a)} className="underline">{a.is_active ? 'Deactivate' : 'Activate'}</button></td></tr>)}</tbody>
+      </table></div>
+    )}
+    <p className="mt-4 text-xs text-neutral-500">Historical journal entries are not changed. Deactivated accounts remain in prior records but are removed from new journal selections.</p>
+  </div>
+)}
+
 {activeTab === 'journal' && (
   <div className={`${t.cardBg} p-6 rounded-2xl shadow-xs border ${t.cardBorder}`}>
     <style jsx global>{`
@@ -3209,10 +3372,10 @@ const calendarDays = [
             <input required value={journalDescription} onChange={e => setJournalDescription(e.target.value)} placeholder="Explain the transaction and why this journal entry is needed" className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal"/>
           </label>
           <label className="text-xs font-bold">DEBIT ACCOUNT *
-            <select value={journalDebitAccount} onChange={e => setJournalDebitAccount(e.target.value)} className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal">{JOURNAL_ACCOUNTS.map(account => <option key={account}>{account}</option>)}</select>
+            <select value={journalDebitAccount} onChange={e => setJournalDebitAccount(e.target.value)} className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal">{activeJournalAccountNames.map(account => <option key={account}>{account}</option>)}</select>
           </label>
           <label className="text-xs font-bold">CREDIT ACCOUNT *
-            <select value={journalCreditAccount} onChange={e => setJournalCreditAccount(e.target.value)} className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal">{JOURNAL_ACCOUNTS.map(account => <option key={account}>{account}</option>)}</select>
+            <select value={journalCreditAccount} onChange={e => setJournalCreditAccount(e.target.value)} className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal">{activeJournalAccountNames.map(account => <option key={account}>{account}</option>)}</select>
           </label>
           <label className="text-xs font-bold">AMOUNT (₱) *
             <input required inputMode="decimal" value={journalAmount} onChange={e => setJournalAmount(e.target.value.replace(/[^0-9.,]/g, ''))} placeholder="0.00" className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm font-normal"/>
@@ -3265,7 +3428,7 @@ const calendarDays = [
             .map(entry => {
               const isReceipt = entry.transaction_type === 'receipt';
               const cashAccount = entry.payment_method?.toLowerCase() === 'cash' ? 'Cash on Hand' : 'Cash in Bank';
-              const expenseAccount = JOURNAL_ACCOUNTS.includes(entry.category) ? entry.category : 'Other Operating Expense';
+              const expenseAccount = activeJournalAccountNames.includes(entry.category) ? entry.category : 'Other Operating Expense';
               return {
                 id: `cash-${entry.id}`,
                 user_id: entry.user_id,
@@ -3406,14 +3569,14 @@ const calendarDays = [
         cashTransactions.filter(e => e.transaction_date.slice(0, 4) === String(journalYear)).forEach(e => {
           const amount = Number(e.amount) || 0;
           const cashAccount = e.payment_method?.toLowerCase() === 'cash' ? 'Cash on Hand' : 'Cash in Bank';
-          const expenseAccount = JOURNAL_ACCOUNTS.includes(e.category) ? e.category : 'Other Operating Expense';
+          const expenseAccount = activeJournalAccountNames.includes(e.category) ? e.category : 'Other Operating Expense';
           const isReceipt = e.transaction_type === 'receipt';
           const debitAccount = isReceipt ? cashAccount : expenseAccount;
           const creditAccount = isReceipt ? 'Professional Fees Income' : cashAccount;
           lines.push({ id: `cash-${e.id}-dr`, date: e.transaction_date, description: e.description, account: debitAccount, debit: amount, credit: 0, ref: e.reference_no || '', imported: true });
           lines.push({ id: `cash-${e.id}-cr`, date: e.transaction_date, description: e.description, account: creditAccount, debit: 0, credit: amount, ref: e.reference_no || '', imported: true });
         });
-        const accounts = Array.from(new Set([...JOURNAL_ACCOUNTS, ...lines.map(line => line.account)])).sort();
+        const accounts = Array.from(new Set([...activeJournalAccountNames, ...lines.map(line => line.account)])).sort();
         const money = (n: number) => formatPeso(Math.abs(n));
         return accounts.map(account => {
           const accountLines = lines.filter(line => line.account === account).sort((a, b) => a.date.localeCompare(b.date));
@@ -3499,13 +3662,13 @@ const calendarDays = [
         cashTransactions.filter(e => e.transaction_date.slice(0, 4) === String(journalYear)).forEach(e => {
           const amount = Number(e.amount) || 0;
           const cashAccount = e.payment_method?.toLowerCase() === 'cash' ? 'Cash on Hand' : 'Cash in Bank';
-          const expenseAccount = JOURNAL_ACCOUNTS.includes(e.category) ? e.category : 'Other Operating Expense';
+          const expenseAccount = activeJournalAccountNames.includes(e.category) ? e.category : 'Other Operating Expense';
           const isReceipt = e.transaction_type === 'receipt';
           lines.push({ date: e.transaction_date, account: isReceipt ? cashAccount : expenseAccount, debit: amount, credit: 0 });
           lines.push({ date: e.transaction_date, account: isReceipt ? 'Professional Fees Income' : cashAccount, debit: 0, credit: amount });
         });
         const normalDebitAccounts = ['Cash on Hand','Cash in Bank','Accounts Receivable','Computer and Equipment','Office Supplies Expense','Internet and Communications Expense','Utilities Expense','Transportation Expense','Software and Subscriptions Expense','Repairs and Maintenance Expense','Taxes and Licenses Expense','Bank Charges Expense','Depreciation Expense','Other Operating Expense',"Owner's Drawings"];
-        const accountNames = Array.from(new Set([...JOURNAL_ACCOUNTS, ...lines.map(line => line.account)])).sort();
+        const accountNames = Array.from(new Set([...activeJournalAccountNames, ...lines.map(line => line.account)])).sort();
         const rows = accountNames.map(account => {
           const debitTotal = lines.filter(line => line.account === account).reduce((sum, line) => sum + line.debit, 0);
           const creditTotal = lines.filter(line => line.account === account).reduce((sum, line) => sum + line.credit, 0);
@@ -3595,23 +3758,29 @@ const calendarDays = [
         const allLines: StatementLine[] = [];
         journalEntries.forEach(e => { const a=Number(e.amount)||0; allLines.push({date:e.entry_date,account:e.debit_account,debit:a,credit:0,source:'General Journal'},{date:e.entry_date,account:e.credit_account,debit:0,credit:a,source:'General Journal'}); });
         birAdjustments.forEach(e => { const a=Number(e.amount)||0; allLines.push({date:e.income_date,account:'Cash in Bank',debit:a,credit:0,source:'BIR income record'},{date:e.income_date,account:'Professional Fees Income',debit:0,credit:a,source:'BIR income record'}); });
-        cashTransactions.forEach(e => { const a=Number(e.amount)||0; const cash=e.payment_method?.toLowerCase()==='cash'?'Cash on Hand':'Cash in Bank'; const exp=JOURNAL_ACCOUNTS.includes(e.category)?e.category:'Other Operating Expense'; const receipt=e.transaction_type==='receipt'; allLines.push({date:e.transaction_date,account:receipt?cash:exp,debit:a,credit:0,source:'Cash Book'},{date:e.transaction_date,account:receipt?'Professional Fees Income':cash,debit:0,credit:a,source:'Cash Book'}); });
+        cashTransactions.forEach(e => { const a=Number(e.amount)||0; const cash=e.payment_method?.toLowerCase()==='cash'?'Cash on Hand':'Cash in Bank'; const exp=activeJournalAccountNames.includes(e.category)?e.category:'Other Operating Expense'; const receipt=e.transaction_type==='receipt'; allLines.push({date:e.transaction_date,account:receipt?cash:exp,debit:a,credit:0,source:'Cash Book'},{date:e.transaction_date,account:receipt?'Professional Fees Income':cash,debit:0,credit:a,source:'Cash Book'}); });
         const inPeriod=(date:string)=>date?.slice(0,4)===String(journalYear) && (statementBasis==='annual' || date?.slice(5,7)===statementMonth);
         const lines=allLines.filter(x=>inPeriod(x.date));
         const debitNormal=['Cash on Hand','Cash in Bank','Accounts Receivable','Computer and Equipment','Office Supplies Expense','Internet and Communications Expense','Utilities Expense','Transportation Expense','Software and Subscriptions Expense','Repairs and Maintenance Expense','Taxes and Licenses Expense','Bank Charges Expense','Depreciation Expense','Other Operating Expense',"Owner's Drawings"];
-        const accountNames=Array.from(new Set([...JOURNAL_ACCOUNTS,...lines.map(x=>x.account)]));
+        const accountNames=Array.from(new Set([...activeJournalAccountNames,...chartAccounts.map(a=>a.account_name),...lines.map(x=>x.account)]));
         const balances=accountNames.map(account=>{const dr=lines.filter(x=>x.account===account).reduce((v,x)=>v+x.debit,0);const cr=lines.filter(x=>x.account===account).reduce((v,x)=>v+x.credit,0);return {account,dr,cr,net:dr-cr};});
         const amount=(account:string)=>{const x=balances.find(b=>b.account===account);return x?x.net:0;};
-        const incomeAccounts=balances.filter(x=>x.account.toLowerCase().includes('income')).map(x=>({name:x.account,value:-x.net}));
-        const expenseAccounts=balances.filter(x=>x.account.toLowerCase().includes('expense')).map(x=>({name:x.account,value:x.net}));
+        const legacyType = (name:string): VAChartAccount['account_type'] => {
+          if (['Cash on Hand','Cash in Bank','Accounts Receivable','Computer and Equipment','Accumulated Depreciation'].includes(name)) return 'Asset';
+          if (name === 'Accounts Payable') return 'Liability';
+          if (["Owner's Capital","Owner's Drawings"].includes(name)) return 'Equity';
+          if (name.toLowerCase().includes('income')) return 'Income';
+          return 'Expense';
+        };
+        const accountTypeFor = (name:string) => chartAccounts.find(a => a.account_name === name)?.account_type || legacyType(name);
+        const incomeAccounts=balances.filter(x=>accountTypeFor(x.account)==='Income').map(x=>({name:x.account,value:-x.net}));
+        const expenseAccounts=balances.filter(x=>accountTypeFor(x.account)==='Expense').map(x=>({name:x.account,value:x.net}));
         const totalIncome=incomeAccounts.reduce((v,x)=>v+x.value,0); const totalExpenses=expenseAccounts.reduce((v,x)=>v+x.value,0); const netIncome=totalIncome-totalExpenses;
-        const assetAccounts=['Cash on Hand','Cash in Bank','Accounts Receivable','Computer and Equipment'];
-        const liabilityAccounts=['Accounts Payable'];
-        const equityAccounts=["Owner's Capital","Owner's Drawings"];
-        const assets=assetAccounts.map(name=>({name,value:amount(name)})).filter(x=>Math.abs(x.value)>0.000001);
-        const liabilities=liabilityAccounts.map(name=>({name,value:-amount(name)})).filter(x=>Math.abs(x.value)>0.000001);
-        const equity=equityAccounts.map(name=>({name,value:-amount(name)})).filter(x=>Math.abs(x.value)>0.000001);
-        const totalAssets=assets.reduce((v,x)=>v+x.value,0); const totalLiabilities=liabilities.reduce((v,x)=>v+x.value,0); const totalEquity=equity.reduce((v,x)=>v+x.value,0)+netIncome;
+        const assets=balances.filter(x=>accountTypeFor(x.account)==='Asset').map(x=>({name:x.account,value:x.net})).filter(x=>Math.abs(x.value)>0.000001);
+        const liabilities=balances.filter(x=>accountTypeFor(x.account)==='Liability').map(x=>({name:x.account,value:-x.net})).filter(x=>Math.abs(x.value)>0.000001);
+        const equity=balances.filter(x=>accountTypeFor(x.account)==='Equity' && x.account !== "Owner's Drawings").map(x=>({name:x.account,value:-x.net})).filter(x=>Math.abs(x.value)>0.000001);
+        const ownerDrawings = balances.filter(x=>accountTypeFor(x.account)==='Equity' && x.account === "Owner's Drawings").reduce((v,x)=>v+x.net,0);
+        const totalAssets=assets.reduce((v,x)=>v+x.value,0); const totalLiabilities=liabilities.reduce((v,x)=>v+x.value,0); const totalEquity=equity.reduce((v,x)=>v+x.value,0)+netIncome-ownerDrawings;
         const cashLines=lines.filter(x=>['Cash on Hand','Cash in Bank'].includes(x.account)); const netCashMovement=cashLines.reduce((v,x)=>v+x.debit-x.credit,0);
         const periodLabel=statementBasis==='annual'?`For the year ended December 31, ${journalYear}`:`For the month ended ${new Date(Number(journalYear),Number(statementMonth),0).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`;
         const fmt=(v:number)=>`${v<0?'(':''}₱${formatPeso(Math.abs(v))}${v<0?')':''}`;
@@ -3619,9 +3788,9 @@ const calendarDays = [
         return <>
           <header className="text-center mb-7"><h2 className="font-bold text-lg tracking-wide">FINANCIAL STATEMENTS</h2><p className="font-semibold">Individual Professional / Self-Employed – Non-VAT</p><p className="text-sm">{periodLabel}</p><p className="text-xs mt-1">Currency: Philippine Peso (₱)</p></header>
           <section className="mb-8"><h3 className="text-center font-bold mb-1">STATEMENT OF COMPREHENSIVE INCOME</h3><p className="text-center text-xs mb-3">{periodLabel}</p><table><thead><tr><th className="text-left">Particulars</th><th className="text-right">Amount (₱)</th></tr></thead><tbody><tr><td colSpan={2} className="font-bold">Income</td></tr>{incomeAccounts.map(x=>row(x.name,x.value))}<tr className="statement-total"><td>Total Income</td><td className="text-right">{fmt(totalIncome)}</td></tr><tr><td colSpan={2} className="font-bold pt-3">Expenses</td></tr>{expenseAccounts.map(x=>row(x.name,x.value))}<tr className="statement-total"><td>Total Expenses</td><td className="text-right">{fmt(totalExpenses)}</td></tr><tr className="statement-total"><td>NET INCOME / (LOSS)</td><td className="text-right">{fmt(netIncome)}</td></tr></tbody></table></section>
-          <section className="mb-8"><h3 className="text-center font-bold mb-1">STATEMENT OF FINANCIAL POSITION</h3><p className="text-center text-xs mb-3">As of {statementBasis==='annual'?`December 31, ${journalYear}`:new Date(Number(journalYear),Number(statementMonth),0).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</p><table><thead><tr><th className="text-left">Particulars</th><th className="text-right">Amount (₱)</th></tr></thead><tbody><tr><td colSpan={2} className="font-bold">Assets</td></tr>{assets.map(x=>row(x.name,x.value))}<tr className="statement-total"><td>Total Assets</td><td className="text-right">{fmt(totalAssets)}</td></tr><tr><td colSpan={2} className="font-bold pt-3">Liabilities</td></tr>{liabilities.map(x=>row(x.name,x.value))}<tr className="statement-total"><td>Total Liabilities</td><td className="text-right">{fmt(totalLiabilities)}</td></tr><tr><td colSpan={2} className="font-bold pt-3">Owner's Equity</td></tr>{equity.map(x=>row(x.name,x.value))}{row('Current Period Net Income / (Loss)',netIncome)}<tr className="statement-total"><td>Total Liabilities and Equity</td><td className="text-right">{fmt(totalLiabilities+totalEquity)}</td></tr></tbody></table><p className="text-xs mt-2">Position check (assets less liabilities and equity): {fmt(totalAssets-totalLiabilities-totalEquity)}. A non-zero difference indicates missing opening balances, incomplete classifications, or unrecorded transactions.</p></section>
+          <section className="mb-8"><h3 className="text-center font-bold mb-1">STATEMENT OF FINANCIAL POSITION</h3><p className="text-center text-xs mb-3">As of {statementBasis==='annual'?`December 31, ${journalYear}`:new Date(Number(journalYear),Number(statementMonth),0).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</p><table><thead><tr><th className="text-left">Particulars</th><th className="text-right">Amount (₱)</th></tr></thead><tbody><tr><td colSpan={2} className="font-bold">Assets</td></tr>{assets.map(x=>row(x.name,x.value))}<tr className="statement-total"><td>Total Assets</td><td className="text-right">{fmt(totalAssets)}</td></tr><tr><td colSpan={2} className="font-bold pt-3">Liabilities</td></tr>{liabilities.map(x=>row(x.name,x.value))}<tr className="statement-total"><td>Total Liabilities</td><td className="text-right">{fmt(totalLiabilities)}</td></tr><tr><td colSpan={2} className="font-bold pt-3">Owner's Equity</td></tr>{equity.map(x=>row(x.name,x.value))}{row('Less: Owner Withdrawals',-ownerDrawings)}{row('Current Period Net Income / (Loss)',netIncome)}<tr className="statement-total"><td>Total Liabilities and Equity</td><td className="text-right">{fmt(totalLiabilities+totalEquity)}</td></tr></tbody></table><p className="text-xs mt-2">Position check (assets less liabilities and equity): {fmt(totalAssets-totalLiabilities-totalEquity)}. A non-zero difference indicates missing opening balances, incomplete classifications, or unrecorded transactions.</p></section>
           <section className="mb-8"><h3 className="text-center font-bold mb-1">STATEMENT OF CASH FLOWS (SUMMARY)</h3><p className="text-center text-xs mb-3">{periodLabel}</p><table><thead><tr><th className="text-left">Particulars</th><th className="text-right">Amount (₱)</th></tr></thead><tbody>{row('Net cash movement from recorded cash accounts',netCashMovement)}{row('Cash receipts recorded',cashLines.reduce((v,x)=>v+x.debit,0))}{row('Cash disbursements recorded',cashLines.reduce((v,x)=>v+x.credit,0))}</tbody></table></section>
-          <section className="mb-8"><h3 className="text-center font-bold mb-1">STATEMENT OF CHANGES IN OWNER'S EQUITY (SUMMARY)</h3><p className="text-center text-xs mb-3">{periodLabel}</p><table><thead><tr><th className="text-left">Particulars</th><th className="text-right">Amount (₱)</th></tr></thead><tbody>{row('Recorded owner contributions',-amount("Owner's Capital"))}{row('Add: Net income / (loss)',netIncome)}{row('Less: Owner withdrawals',amount("Owner's Drawings"))}<tr className="statement-total"><td>Net change in owner's equity (summary)</td><td className="text-right">{fmt(-amount("Owner's Capital")+netIncome-amount("Owner's Drawings"))}</td></tr></tbody></table></section>
+          <section className="mb-8"><h3 className="text-center font-bold mb-1">STATEMENT OF CHANGES IN OWNER'S EQUITY (SUMMARY)</h3><p className="text-center text-xs mb-3">{periodLabel}</p><table><thead><tr><th className="text-left">Particulars</th><th className="text-right">Amount (₱)</th></tr></thead><tbody>{row('Recorded owner contributions',-amount("Owner's Capital"))}{row('Add: Net income / (loss)',netIncome)}{row('Less: Owner withdrawals',ownerDrawings)}<tr className="statement-total"><td>Net change in owner's equity (summary)</td><td className="text-right">{fmt(-amount("Owner's Capital")+netIncome-ownerDrawings)}</td></tr></tbody></table></section>
           <section className="mb-5"><h3 className="font-bold mb-2">NOTES TO THE FINANCIAL REPORTS</h3><ol className="list-decimal pl-5 text-xs space-y-1"><li>These are preliminary internal management reports generated from saved General Journal entries and linked BIR/Cash Book records for the selected period.</li><li>Historical source records may overlap. Confirm that each receipt or disbursement is represented only once before relying on totals.</li><li>Opening balances, depreciation, liabilities, owner contributions/withdrawals, and non-cash adjustments must be entered and reconciled where applicable.</li><li>These reports are not represented as PFRS-compliant financial statements or BIR-registered books. Confirm the applicable reporting framework and required disclosures with a Philippine CPA.</li></ol></section>
           <footer className="grid grid-cols-2 gap-12 text-xs mt-10"><div className="border-t border-black pt-2">Prepared by</div><div className="border-t border-black pt-2">Reviewed by</div></footer>
           <p className="text-xs mt-5 text-center">Generated from the VA & Freelance Management System · For internal review</p>
