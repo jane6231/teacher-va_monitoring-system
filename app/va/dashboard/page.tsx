@@ -246,6 +246,16 @@ const [showInvoiceForm, setShowInvoiceForm] = useState(false);
 const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
 const [viewingInvoice, setViewingInvoice] = useState<VAInvoice | null>(null);
 const [issuingInvoice, setIssuingInvoice] = useState(false);
+const [invoicePayments, setInvoicePayments] = useState<any[]>([]);
+const [showPaymentForm, setShowPaymentForm] = useState(false);
+const [paymentAmount, setPaymentAmount] = useState('');
+const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
+const [paymentMethod, setPaymentMethod] = useState('Bank Transfer');
+const [paymentReference, setPaymentReference] = useState('');
+const [paymentReceiptUrl, setPaymentReceiptUrl] = useState('');
+const [paymentSaving, setPaymentSaving] = useState(false);
+const [paymentError, setPaymentError] = useState('');
+
 
 const [invoiceClient, setInvoiceClient] = useState('');
 const [invoiceDescription, setInvoiceDescription] = useState('');
@@ -1703,6 +1713,74 @@ const handleIssueInvoice = async (invoice: VAInvoice) => {
     previous.map(item => item.id === updatedInvoice.id ? updatedInvoice : item)
   );
   setViewingInvoice(updatedInvoice);
+};
+
+const loadInvoicePayments = async (invoiceId: string) => {
+  const { data, error } = await supabase
+    .from('va_invoice_payments')
+    .select('*')
+    .eq('invoice_id', invoiceId)
+    .order('payment_date', { ascending: true });
+  if (error) {
+    setPaymentError(error.message);
+    setInvoicePayments([]);
+  } else {
+    setInvoicePayments(data || []);
+    setPaymentError('');
+  }
+};
+
+const openInvoiceDetails = async (invoice: VAInvoice) => {
+  setViewingInvoice(invoice);
+  setShowPaymentForm(false);
+  setPaymentAmount('');
+  setPaymentDate(new Date().toISOString().slice(0, 10));
+  setPaymentMethod('Bank Transfer');
+  setPaymentReference('');
+  setPaymentReceiptUrl('');
+  setPaymentError('');
+  await loadInvoicePayments(invoice.id);
+};
+
+const saveInvoicePayment = async () => {
+  if (!user || !viewingInvoice || viewingInvoice.status === 'draft' || viewingInvoice.status === 'paid' || paymentSaving) return;
+  const amount = Number(paymentAmount);
+  const alreadyPaid = invoicePayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  const balance = Math.max(0, Number(viewingInvoice.amount) - alreadyPaid);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > balance + 0.000001) {
+    setPaymentError(`Enter an amount greater than zero and not more than the remaining balance (${formatPeso(balance)}).`);
+    return;
+  }
+  if (!paymentDate) {
+    setPaymentError('Enter the date the payment was received.');
+    return;
+  }
+  setPaymentSaving(true);
+  setPaymentError('');
+  const { data, error } = await supabase.rpc('record_va_invoice_payment', {
+    p_invoice_id: viewingInvoice.id,
+    p_amount: amount,
+    p_payment_date: paymentDate,
+    p_payment_method: paymentMethod,
+    p_reference_no: paymentReference.trim() || null,
+    p_receipt_url: paymentReceiptUrl.trim() || null,
+  });
+  setPaymentSaving(false);
+  if (error) {
+    setPaymentError(error.message);
+    return;
+  }
+  const updatedInvoice = data?.invoice as VAInvoice | undefined;
+  if (updatedInvoice) {
+    setInvoices(prev => prev.map(item => item.id === updatedInvoice.id ? updatedInvoice : item));
+    setViewingInvoice(updatedInvoice);
+  }
+  setShowPaymentForm(false);
+  setPaymentAmount('');
+  setPaymentReference('');
+  setPaymentReceiptUrl('');
+  await loadInvoicePayments(viewingInvoice.id);
+  await loadCashTransactions(user.id);
 };
 
 const handleDeleteInvoice = async (invoiceId: string) => {
@@ -3226,7 +3304,7 @@ projects.filter(project => project.status !== 'completed').forEach(project => ad
 
   <button
     type="button"
-    onClick={() => setViewingInvoice(invoice)}
+    onClick={() => openInvoiceDetails(invoice)}
     className="rounded-lg border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
   >
     View Invoice
@@ -3384,13 +3462,73 @@ projects.filter(project => project.status !== 'completed').forEach(project => ad
           </p>
         </div>
 
+        <div className="border-t border-neutral-200 pt-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-bold text-neutral-900">Payment History</h3>
+            <span className="text-xs text-neutral-500">
+              Paid: {formatPeso(invoicePayments.reduce((sum, p) => sum + Number(p.amount || 0), 0))}
+            </span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-neutral-600">Outstanding balance</span>
+            <strong>{formatPeso(Math.max(0, Number(viewingInvoice.amount) - invoicePayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)))}</strong>
+          </div>
+          {invoicePayments.length > 0 ? (
+            <div className="space-y-2">
+              {invoicePayments.map((payment: any) => (
+                <div key={payment.id} className="rounded-lg border border-neutral-200 p-3 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <strong>{formatPeso(payment.amount)}</strong>
+                    <span>{payment.payment_date}</span>
+                  </div>
+                  <p className="text-neutral-600">{payment.payment_method}{payment.reference_no ? ` · Ref: ${payment.reference_no}` : ''}</p>
+                  {payment.receipt_url && <a href={payment.receipt_url} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">Open payment receipt ↗</a>}
+                </div>
+              ))}
+            </div>
+          ) : <p className="text-sm text-neutral-500">No payments recorded yet.</p>}
+          {paymentError && <p role="alert" className="text-sm text-red-700">{paymentError}</p>}
+          {viewingInvoice.status !== 'draft' && viewingInvoice.status !== 'paid' && (
+            <button type="button" onClick={() => setShowPaymentForm(v => !v)} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold">
+              {showPaymentForm ? 'Cancel Payment' : '+ Record Payment'}
+            </button>
+          )}
+          {showPaymentForm && (
+            <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="text-xs font-bold text-neutral-600">Amount Received (₱)
+                  <input type="number" min="0.01" step="0.01" max={Math.max(0, Number(viewingInvoice.amount) - invoicePayments.reduce((sum, p) => sum + Number(p.amount || 0), 0))} value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white p-2.5 text-sm" />
+                </label>
+                <label className="text-xs font-bold text-neutral-600">Payment Date
+                  <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white p-2.5 text-sm" />
+                </label>
+                <label className="text-xs font-bold text-neutral-600">Payment Method
+                  <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white p-2.5 text-sm">
+                    {['Bank Transfer','GCash','Maya','Cash','PayPal','Other'].map(method => <option key={method}>{method}</option>)}
+                  </select>
+                </label>
+                <label className="text-xs font-bold text-neutral-600">Reference Number
+                  <input value={paymentReference} onChange={e => setPaymentReference(e.target.value)} placeholder="Optional" className="mt-1 w-full rounded-lg border border-neutral-300 bg-white p-2.5 text-sm" />
+                </label>
+                <label className="text-xs font-bold text-neutral-600 sm:col-span-2">Receipt Link
+                  <input type="url" value={paymentReceiptUrl} onChange={e => setPaymentReceiptUrl(e.target.value)} placeholder="Paste Google Drive or document link" className="mt-1 w-full rounded-lg border border-neutral-300 bg-white p-2.5 text-sm" />
+                  <span className="mt-1 block font-normal text-neutral-500">Add a link to your copy of the client's payment receipt or proof.</span>
+                </label>
+              </div>
+              <button type="button" disabled={paymentSaving} onClick={saveInvoicePayment} className="rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50">
+                {paymentSaving ? 'Saving payment...' : 'Save Payment & Cash Book Entry'}
+              </button>
+            </div>
+          )}
+        </div>
+
         <div>
           <p className="text-xs text-neutral-500">Payment Status</p>
           <p className="font-bold">
             {viewingInvoice.status === 'draft'
               ? 'Draft — not yet issued'
               : viewingInvoice.status === 'pending'
-                ? 'Issued — awaiting payment'
+                ? (invoicePayments.reduce((sum, p) => sum + Number(p.amount || 0), 0) > 0 ? 'Partially paid' : 'Issued — awaiting payment')
                 : viewingInvoice.status === 'paid'
                   ? 'Paid'
                   : 'Overdue'}
