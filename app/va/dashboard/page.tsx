@@ -3335,7 +3335,7 @@ projects.filter(project => project.status !== 'completed').forEach(project => ad
 
 
 {viewingInvoice && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+  <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/50 p-4 sm:items-center">
     <style>{`
       @media print {
         @page { size: A4 portrait; margin: 16mm; }
@@ -3348,6 +3348,9 @@ projects.filter(project => project.status !== 'completed').forEach(project => ad
         body * { visibility: hidden !important; }
         #invoice-print, #invoice-print * { visibility: visible !important; }
         #invoice-print {
+          max-height: none !important;
+          height: auto !important;
+          overflow: visible !important;
           position: absolute !important;
           left: 0 !important;
           top: 0 !important;
@@ -3371,7 +3374,7 @@ projects.filter(project => project.status !== 'completed').forEach(project => ad
         #invoice-print .no-print { display: none !important; }
       }
     `}</style>
-    <div id="invoice-print" className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+    <div id="invoice-print" className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-2xl bg-white p-6 shadow-xl">
 
       <div className="no-print flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold text-neutral-900">
