@@ -70,8 +70,10 @@ type VAInvoice = {
   amount: number;
   issue_date: string;
   due_date: string | null;
-  status: 'pending' | 'paid' | 'overdue';
+  status: 'draft' | 'pending' | 'paid' | 'overdue';
   receipt_url: string | null;
+  project_id?: string | null;
+  payment_terms?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -124,6 +126,14 @@ const formatPeso = (value: number | string | null | undefined) => {
 
 export default function VADashboard() {
   const [user, setUser] = useState<any>(null);
+  const [invoiceProfile, setInvoiceProfile] = useState({
+    fullName: '',
+    businessAddress: '',
+    tin: '',
+    contactNumber: '',
+  });
+  const [invoiceProfileSaving, setInvoiceProfileSaving] = useState(false);
+  const [invoiceProfileMessage, setInvoiceProfileMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [workView, setWorkView] = useState<'tasks' | 'projects'>('tasks');
@@ -214,6 +224,11 @@ const [projectStartDate, setProjectStartDate] = useState('');
 const [projectDueDate, setProjectDueDate] = useState('');
 const [retainerAmount, setRetainerAmount] = useState('0');
 const [billingCycle, setBillingCycle] = useState('monthly');
+const [projectCreateInvoice, setProjectCreateInvoice] = useState<'yes' | 'no'>('no');
+const [projectInvoiceAmount, setProjectInvoiceAmount] = useState('');
+const [projectInvoiceDueDate, setProjectInvoiceDueDate] = useState('');
+const [projectInvoicePaymentTerms, setProjectInvoicePaymentTerms] = useState('');
+
 
 const [timeEntries, setTimeEntries] = useState<VATimeEntry[]>([]);
 const [timeLoading, setTimeLoading] = useState(false);
@@ -230,6 +245,7 @@ const [invoiceError, setInvoiceError] = useState('');
 const [showInvoiceForm, setShowInvoiceForm] = useState(false);
 const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
 const [viewingInvoice, setViewingInvoice] = useState<VAInvoice | null>(null);
+const [issuingInvoice, setIssuingInvoice] = useState(false);
 
 const [invoiceClient, setInvoiceClient] = useState('');
 const [invoiceDescription, setInvoiceDescription] = useState('');
@@ -914,6 +930,12 @@ async function deleteDocument(documentId: string) {
         return;
       }
       setUser(user);
+      setInvoiceProfile({
+        fullName: user.user_metadata?.invoice_full_name || '',
+        businessAddress: user.user_metadata?.invoice_business_address || '',
+        tin: user.user_metadata?.invoice_tin || '',
+        contactNumber: user.user_metadata?.invoice_contact_number || '',
+      });
 await loadTasks(user.id);
 await loadClients(user.id);
 await loadTimeEntries(user.id);
@@ -1346,6 +1368,10 @@ const resetProjectForm = () => {
   setProjectDueDate('');
   setRetainerAmount('0');
   setBillingCycle('monthly');
+  setProjectCreateInvoice('no');
+  setProjectInvoiceAmount('');
+  setProjectInvoiceDueDate('');
+  setProjectInvoicePaymentTerms('');
   setShowProjectForm(false);
   setProjectError('');
 };
@@ -1365,6 +1391,10 @@ const openEditProjectForm = (project: VAProject) => {
   setProjectDueDate(project.due_date || '');
   setRetainerAmount(String(project.retainer_amount ?? 0));
   setBillingCycle(project.billing_cycle || 'monthly');
+  setProjectCreateInvoice('no');
+  setProjectInvoiceAmount('');
+  setProjectInvoiceDueDate('');
+  setProjectInvoicePaymentTerms('');
   setProjectError('');
   setShowProjectForm(true);
 };
@@ -1390,6 +1420,18 @@ const handleSaveProject = async (
     return;
   }
 
+  if (!editingProjectId && projectCreateInvoice === 'yes') {
+    const invoiceAmountValue = Number(projectInvoiceAmount || amount);
+    if (!projectClient.trim()) {
+      setProjectError('Select a client before creating an invoice.');
+      return;
+    }
+    if (!Number.isFinite(invoiceAmountValue) || invoiceAmountValue <= 0) {
+      setProjectError('Enter an invoice amount greater than zero.');
+      return;
+    }
+  }
+
   if (
     projectStartDate &&
     projectDueDate &&
@@ -1411,22 +1453,84 @@ const handleSaveProject = async (
     updated_at: new Date().toISOString(),
   };
 
-  const result = editingProjectId
-    ? await supabase
-        .from('va_projects')
-        .update(projectData)
-        .eq('id', editingProjectId)
-        .eq('user_id', user.id)
-    : await supabase
-        .from('va_projects')
-        .insert({
-          ...projectData,
-          user_id: user.id,
-        });
+  let savedProjectId = editingProjectId;
 
-  if (result.error) {
-    setProjectError(result.error.message);
-    return;
+  if (editingProjectId) {
+    const { error } = await supabase
+      .from('va_projects')
+      .update(projectData)
+      .eq('id', editingProjectId)
+      .eq('user_id', user.id);
+
+    if (error) {
+      setProjectError(error.message);
+      return;
+    }
+  } else {
+    const { data, error } = await supabase
+      .from('va_projects')
+      .insert({
+        ...projectData,
+        user_id: user.id,
+      })
+      .select('id')
+      .single();
+
+    if (error || !data) {
+      setProjectError(error?.message || 'Project could not be saved.');
+      return;
+    }
+    savedProjectId = data.id;
+  }
+
+  // Invoice generation is offered only when creating a new project.
+  // It is saved as Draft so the user can review it before issuing.
+  if (!editingProjectId && projectCreateInvoice === 'yes') {
+    const invoiceAmountValue = Number(projectInvoiceAmount || amount);
+    if (!projectClient.trim()) {
+      setProjectError('Project saved, but an invoice was not created. Add a client name and create the invoice from Invoices & Billing.');
+      await loadProjects(user.id);
+      return;
+    }
+    if (!Number.isFinite(invoiceAmountValue) || invoiceAmountValue <= 0) {
+      setProjectError('Project saved, but the invoice amount must be greater than zero. Edit the project or create its invoice from Invoices & Billing.');
+      await loadProjects(user.id);
+      return;
+    }
+
+    const invoiceDescriptionText = projectDescription.trim()
+      ? `${projectName.trim()} — ${projectDescription.trim()}`
+      : projectName.trim();
+
+    const { data: createdInvoice, error: invoiceCreateError } = await supabase
+      .from('va_invoices')
+      .insert({
+        user_id: user.id,
+        project_id: savedProjectId,
+        invoice_number: `INV-${Date.now()}`,
+        client_name: projectClient.trim(),
+        description: invoiceDescriptionText,
+        amount: invoiceAmountValue,
+        issue_date: new Date().toISOString().split('T')[0],
+        due_date: projectInvoiceDueDate || projectDueDate || null,
+        payment_terms: projectInvoicePaymentTerms.trim() || null,
+        status: 'draft',
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (invoiceCreateError) {
+      setEditingProjectId(savedProjectId);
+      setProjectCreateInvoice('no');
+      setProjectError(`Project was saved, but invoice creation failed: ${invoiceCreateError.message}. The project is now in edit mode; you can create its invoice from Invoices & Billing.`);
+      await loadProjects(user.id);
+      return;
+    }
+
+    if (createdInvoice) {
+      setInvoices(prev => [createdInvoice as VAInvoice, ...prev]);
+    }
   }
 
   await loadProjects(user.id);
@@ -1562,6 +1666,45 @@ const handleSaveInvoice = async (
   resetInvoiceForm();
 };
 
+const handleIssueInvoice = async (invoice: VAInvoice) => {
+  if (!user || invoice.status !== 'draft' || issuingInvoice) return;
+
+  const confirmed = window.confirm(
+    `Issue invoice ${invoice.invoice_number} to ${invoice.client_name}? Once issued, it will be marked as pending payment.`
+  );
+  if (!confirmed) return;
+
+  setIssuingInvoice(true);
+  setInvoiceError('');
+
+  const actualIssueDate = new Date().toISOString().split('T')[0];
+  const { data, error } = await supabase
+    .from('va_invoices')
+    .update({
+      status: 'pending',
+      issue_date: actualIssueDate,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', invoice.id)
+    .eq('user_id', user.id)
+    .eq('status', 'draft')
+    .select()
+    .single();
+
+  setIssuingInvoice(false);
+
+  if (error || !data) {
+    setInvoiceError(error?.message || 'This invoice could not be issued. Refresh the invoice list and try again.');
+    return;
+  }
+
+  const updatedInvoice = data as VAInvoice;
+  setInvoices(previous =>
+    previous.map(item => item.id === updatedInvoice.id ? updatedInvoice : item)
+  );
+  setViewingInvoice(updatedInvoice);
+};
+
 const handleDeleteInvoice = async (invoiceId: string) => {
   if (!user || !window.confirm('Delete this invoice? This cannot be undone.')) return;
   setInvoiceError('');
@@ -1575,6 +1718,27 @@ const handleDeleteInvoice = async (invoiceId: string) => {
   if (viewingInvoice?.id === invoiceId) setViewingInvoice(null);
 };
 
+
+  const saveInvoiceProfile = async () => {
+    if (!user) return;
+    setInvoiceProfileSaving(true);
+    setInvoiceProfileMessage('');
+    const { data, error } = await supabase.auth.updateUser({
+      data: {
+        invoice_full_name: invoiceProfile.fullName.trim(),
+        invoice_business_address: invoiceProfile.businessAddress.trim(),
+        invoice_tin: invoiceProfile.tin.trim(),
+        invoice_contact_number: invoiceProfile.contactNumber.trim(),
+      },
+    });
+    setInvoiceProfileSaving(false);
+    if (error) {
+      setInvoiceProfileMessage(`Could not save invoice details: ${error.message}`);
+      return;
+    }
+    if (data.user) setUser(data.user);
+    setInvoiceProfileMessage('Invoice details saved successfully.');
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -2448,6 +2612,40 @@ projects.filter(project => project.status !== 'completed').forEach(project => ad
               className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm"
             />
           </div>
+
+          {!editingProjectId && (
+            <div className="md:col-span-2 rounded-xl border border-neutral-200 bg-white p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <p className="text-sm font-bold text-neutral-900">Create an invoice for this project?</p>
+                  <p className="text-xs text-neutral-500 mt-1">You can choose now. If yes, a Draft invoice will be added to Invoices & Billing for review.</p>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setProjectCreateInvoice('yes')} className={`rounded-lg border px-4 py-2 text-sm font-semibold ${projectCreateInvoice === 'yes' ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-300 bg-white text-neutral-700'}`}>Yes, create invoice</button>
+                  <button type="button" onClick={() => setProjectCreateInvoice('no')} className={`rounded-lg border px-4 py-2 text-sm font-semibold ${projectCreateInvoice === 'no' ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-300 bg-white text-neutral-700'}`}>No, not now</button>
+                </div>
+              </div>
+
+              {projectCreateInvoice === 'yes' && (
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-neutral-200 pt-4">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">Invoice Amount (₱) *</label>
+                    <input type="number" min="0.01" step="0.01" required value={projectInvoiceAmount || retainerAmount} onChange={e => setProjectInvoiceAmount(e.target.value)} className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm" />
+                    <p className="mt-1 text-xs text-neutral-500">Defaults to the project budget. You can change it for this invoice.</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">Invoice Due Date</label>
+                    <input type="date" value={projectInvoiceDueDate || projectDueDate} onChange={e => setProjectInvoiceDueDate(e.target.value)} className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-neutral-600 mb-1">Custom Payment Terms</label>
+                    <textarea rows={3} value={projectInvoicePaymentTerms} onChange={e => setProjectInvoicePaymentTerms(e.target.value)} placeholder="Example: 30% upon approval, 40% after the first draft, and 30% upon final delivery." className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm" />
+                    <p className="mt-1 text-xs text-neutral-500">Describe your agreed payment arrangement, milestones, and due dates. This will be saved with the Draft invoice.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 mt-5">
@@ -2906,6 +3104,7 @@ projects.filter(project => project.status !== 'completed').forEach(project => ad
               onChange={e => setInvoiceStatus(e.target.value as VAInvoice['status'])}
               className="w-full rounded-xl border bg-white px-4 py-2.5 text-sm"
             >
+              <option value="draft">Draft</option>
               <option value="pending">Pending</option>
               <option value="paid">Paid</option>
               <option value="overdue">Overdue</option>
@@ -3015,8 +3214,14 @@ projects.filter(project => project.status !== 'completed').forEach(project => ad
                 </p>
                 
                <div className="flex items-center gap-2 mt-2 sm:justify-end">
-  <span className="text-xs font-semibold capitalize">
-    {invoice.status}
+  <span className="text-xs font-semibold">
+    {invoice.status === 'draft'
+      ? 'Draft'
+      : invoice.status === 'pending'
+        ? 'Issued / Unpaid'
+        : invoice.status === 'paid'
+          ? 'Paid'
+          : 'Overdue'}
   </span>
 
   <button
@@ -3053,9 +3258,44 @@ projects.filter(project => project.status !== 'completed').forEach(project => ad
 
 {viewingInvoice && (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-    <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+    <style>{`
+      @media print {
+        @page { size: A4 portrait; margin: 16mm; }
+        html, body {
+          margin: 0 !important;
+          padding: 0 !important;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        body * { visibility: hidden !important; }
+        #invoice-print, #invoice-print * { visibility: visible !important; }
+        #invoice-print {
+          position: absolute !important;
+          left: 0 !important;
+          top: 0 !important;
+          width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          color: #000 !important;
+          background: #fff !important;
+          box-shadow: none !important;
+        }
+        /* Browser-generated date, title, URL and page numbers are disabled
+           in the print dialog; this CSS keeps the invoice itself clean. */
+        @page :first {
+          margin: 16mm;
+        }
+        #invoice-print * {
+          color: #000 !important;
+          background: #fff !important;
+          box-shadow: none !important;
+        }
+        #invoice-print .no-print { display: none !important; }
+      }
+    `}</style>
+    <div id="invoice-print" className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
 
-      <div className="flex justify-between items-center mb-6">
+      <div className="no-print flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold text-neutral-900">
           Invoice Details
         </h2>
@@ -3070,11 +3310,14 @@ projects.filter(project => project.status !== 'completed').forEach(project => ad
 
       <div className="border-b border-neutral-200 pb-5 mb-5">
         <h3 className="text-2xl font-black text-neutral-900">
-          VA & Freelance
+          {invoiceProfile.fullName || 'Your Name'}
         </h3>
-        <p className="text-sm text-neutral-500">
-          INVOICE
-        </p>
+        <p className="text-sm text-neutral-500">INVOICE</p>
+        <div className="mt-2 space-y-0.5 text-sm text-neutral-700">
+          {invoiceProfile.businessAddress && <p className="whitespace-pre-wrap">{invoiceProfile.businessAddress}</p>}
+          {invoiceProfile.tin && <p>TIN: {invoiceProfile.tin}</p>}
+          {invoiceProfile.contactNumber && <p>Contact: {invoiceProfile.contactNumber}</p>}
+        </div>
       </div>
 
       <div className="space-y-4">
@@ -3127,6 +3370,13 @@ projects.filter(project => project.status !== 'completed').forEach(project => ad
           </div>
         </div>
 
+        {viewingInvoice.payment_terms && (
+          <div className="border-t border-neutral-200 pt-4">
+            <p className="text-xs text-neutral-500 mb-1">Payment Terms</p>
+            <p className="whitespace-pre-wrap">{viewingInvoice.payment_terms}</p>
+          </div>
+        )}
+
         <div className="border-t border-neutral-200 pt-4">
           <p className="text-xs text-neutral-500">Total Amount</p>
           <p className="text-3xl font-black text-amber-600">
@@ -3136,14 +3386,38 @@ projects.filter(project => project.status !== 'completed').forEach(project => ad
 
         <div>
           <p className="text-xs text-neutral-500">Payment Status</p>
-          <p className="font-bold capitalize">
-            {viewingInvoice.status}
+          <p className="font-bold">
+            {viewingInvoice.status === 'draft'
+              ? 'Draft — not yet issued'
+              : viewingInvoice.status === 'pending'
+                ? 'Issued — awaiting payment'
+                : viewingInvoice.status === 'paid'
+                  ? 'Paid'
+                  : 'Overdue'}
           </p>
         </div>
       </div>
 
-      <div className="flex justify-end mt-6">
+      <div className="no-print flex flex-wrap justify-end gap-2 mt-6">
+        {viewingInvoice.status === 'draft' && (
+          <button
+            type="button"
+            disabled={issuingInvoice}
+            onClick={() => handleIssueInvoice(viewingInvoice)}
+            className="rounded-xl bg-black px-5 py-2 text-sm font-bold text-white hover:bg-neutral-800 disabled:opacity-50"
+          >
+            {issuingInvoice ? 'Issuing...' : 'Issue Invoice'}
+          </button>
+        )}
         <button
+          type="button"
+          onClick={() => window.print()}
+          className="rounded-xl border border-neutral-300 bg-white px-5 py-2 text-sm font-bold text-neutral-900 hover:bg-neutral-50"
+        >
+          Print / Save PDF
+        </button>
+        <button
+          type="button"
           onClick={() => setViewingInvoice(null)}
           className="rounded-xl bg-amber-600 px-5 py-2 text-sm font-bold text-white hover:bg-amber-700"
         >
@@ -4378,6 +4652,35 @@ projects.filter(project => project.status !== 'completed').forEach(project => ad
   ◼ Monochrome – Black & White
 </button>
                 </div>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-200 bg-white p-5 space-y-4">
+                <div>
+                  <h2 className="text-base font-bold text-neutral-900">Invoice Sender Details</h2>
+                  <p className="mt-1 text-xs text-neutral-500">These details appear on your printable invoices. Keep your TIN accurate before issuing invoices.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-neutral-500 uppercase mb-1">Full Name / Registered Name</label>
+                  <input type="text" value={invoiceProfile.fullName} onChange={e => setInvoiceProfile(prev => ({ ...prev, fullName: e.target.value }))} placeholder="Enter your registered name" className="w-full px-4 py-2.5 bg-white border border-neutral-200 rounded-xl text-sm text-neutral-800" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-neutral-500 uppercase mb-1">Business / Registered Address</label>
+                  <textarea rows={2} value={invoiceProfile.businessAddress} onChange={e => setInvoiceProfile(prev => ({ ...prev, businessAddress: e.target.value }))} placeholder="Enter your registered address" className="w-full px-4 py-2.5 bg-white border border-neutral-200 rounded-xl text-sm text-neutral-800" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-500 uppercase mb-1">TIN</label>
+                    <input type="text" value={invoiceProfile.tin} onChange={e => setInvoiceProfile(prev => ({ ...prev, tin: e.target.value }))} placeholder="000-000-000-000" className="w-full px-4 py-2.5 bg-white border border-neutral-200 rounded-xl text-sm text-neutral-800" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-500 uppercase mb-1">Contact Number</label>
+                    <input type="tel" value={invoiceProfile.contactNumber} onChange={e => setInvoiceProfile(prev => ({ ...prev, contactNumber: e.target.value }))} placeholder="09XX XXX XXXX" className="w-full px-4 py-2.5 bg-white border border-neutral-200 rounded-xl text-sm text-neutral-800" />
+                  </div>
+                </div>
+                {invoiceProfileMessage && <p className={`text-sm ${invoiceProfileMessage.startsWith('Could not') ? 'text-red-600' : 'text-green-700'}`}>{invoiceProfileMessage}</p>}
+                <button type="button" onClick={saveInvoiceProfile} disabled={invoiceProfileSaving} className={`px-5 py-2.5 ${t.accentBtn} rounded-xl text-sm font-bold shadow-xs disabled:opacity-50`}>
+                  {invoiceProfileSaving ? 'Saving...' : 'Save Invoice Details'}
+                </button>
               </div>
 
               <div>
